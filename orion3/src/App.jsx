@@ -1298,6 +1298,8 @@ export default function App() {
     const t = setInterval(check, 60000)
     return ()=>clearInterval(t)
   },[user])
+
+  const handleNav = (id) => {
     if (!FREE.has(id) && (!user || user.id==='guest')) {
       setAuthMode('signup'); setShowAuth(true); return
     }
