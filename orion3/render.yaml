@@ -2,16 +2,10 @@ services:
   - type: web
     name: 0rion
     env: static
+    rootDir: orion3
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
-    envVars:
-      - key: VITE_SUPABASE_URL
-        sync: false
-      - key: VITE_SUPABASE_ANON_KEY
-        sync: false
-      - key: VITE_WORLDMONITOR_URL
-        sync: false
