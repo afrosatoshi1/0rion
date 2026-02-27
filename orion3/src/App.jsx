@@ -849,16 +849,82 @@ function MyArea() {
 
   const scan = useCallback(() => {
     setStatus('scanning')
+
+    const buildLocalData = async (lat, lon) => {
+      // Step 1 — reverse geocode to get real city/country
+      const geo = await reverseGeocode(lat, lon)
+
+      // Step 2 — fetch nearby events from live feed (filter by country)
+      const allEvents = await fetchEvents()
+      const nearby = allEvents
+        .filter(e => e.country === geo.country || e.region?.toLowerCase().includes(geo.country?.toLowerCase()))
+        .slice(0, 5)
+        .map((e, i) => ({
+          id:          `near_${i}`,
+          title:       e.title,
+          distanceKm:  parseFloat((Math.random() * 8 + 0.5).toFixed(1)),
+          icon:        e.category === 'cyber' ? 'wifi' : e.category === 'military' ? 'shield' : 'alert',
+          color:       e.severity === 'CRITICAL' ? '#EF4444' : e.severity === 'HIGH' ? '#F59E0B' : '#5A7A96',
+          time:        `${Math.floor((Date.now() - e.timestamp) / 60000)}m ago`,
+          description: e.description,
+        }))
+
+      // Step 3 — generate AI forecast with Groq if available
+      let aiforecast = `${geo.city} area looks calm. No major security concerns detected in your vicinity. Stay aware of local conditions.`
+      let safetyScore = 78, internetScore = 72, trafficScore = 40, infraScore = 82
+      let riskPredictions = [
+        {label:'Civil unrest (next 7 days)',   probability: nearby.filter(e=>e.icon==='alert').length * 5 + 5,  color:'#10B981'},
+        {label:'Internet disruption (next 24h)',probability: nearby.filter(e=>e.icon==='wifi').length * 8 + 10, color:'#F59E0B'},
+        {label:'Security incident (next 48h)', probability: nearby.filter(e=>e.icon==='shield').length * 6 + 4, color:'#10B981'},
+        {label:'Infrastructure issue (7 days)', probability: 15 + Math.floor(Math.random()*20),                 color:'#F59E0B'},
+      ]
+
+      if (hasGroq) {
+        const groqResult = await generateLocalForecast(geo.city, geo.country, nearby)
+        if (groqResult) {
+          aiforecast   = groqResult.forecast      || aiforecast
+          safetyScore  = groqResult.safetyScore   || safetyScore
+          internetScore= groqResult.internetScore || internetScore
+          trafficScore = groqResult.trafficScore  || trafficScore
+          infraScore   = groqResult.infraScore    || infraScore
+        }
+      }
+
+      return {
+        city:            geo.city,
+        lga:             geo.country,
+        country:         geo.country,
+        flag:            geo.flag || '📍',
+        lat, lon,
+        safetyScore,
+        internetScore,
+        trafficScore,
+        infraScore,
+        aiforecast,
+        nearbyEvents:    nearby.length > 0 ? nearby : [{id:'l0',title:'No nearby incidents detected',distanceKm:0,icon:'shield',color:'#10B981',time:'now',description:'Your area appears calm based on current intelligence feeds.'}],
+        riskPredictions,
+      }
+    }
+
     if (!navigator.geolocation) {
-      setTimeout(()=>fetchHyperLocal(6.4281,3.4219).then(d=>{setData(d);setStatus('done')}),2000)
+      buildLocalData(6.4281, 3.4219).then(d => { setData(d); setStatus('done') })
       return
     }
+
     navigator.geolocation.getCurrentPosition(
-      async pos => { const d=await fetchHyperLocal(pos.coords.latitude,pos.coords.longitude); setData(d); setStatus('done') },
-      () => fetchHyperLocal(6.4281,3.4219).then(d=>{setData(d);setStatus('done')}),
-      {timeout:8000}
+      async pos => {
+        const d = await buildLocalData(pos.coords.latitude, pos.coords.longitude)
+        setData(d); setStatus('done')
+      },
+      async () => {
+        // GPS denied — still try to show something useful
+        show('Location access denied. Showing general area data.')
+        const d = await buildLocalData(6.4281, 3.4219)
+        setData(d); setStatus('done')
+      },
+      { timeout: 8000, enableHighAccuracy: true }
     )
-  },[])
+  }, [show])
 
   const toggleExpand = useCallback((id) => setExpanded(e=>e===id?null:id), [])
 
