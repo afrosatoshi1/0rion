@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { NigeriaPulse, GovernmentWatch, PredictionEngine, NigeriaEconomy, Agriculture, CivicIQ } from './screens/Nigeria'
+import Map4D from './screens/Map4D'
 import { supabase, hasSupabase } from './lib/supabase'
 import { generateBrief, generateLocalForecast, hasGroq } from './lib/groq'
 import { subscribeToPush, unsubscribeFromPush, notify, getPushStatus, registerSW } from './lib/push'
@@ -1301,13 +1303,28 @@ const NAV = [
   {id:'geoedge',  icon:'trending',  label:'GeoEdge'},
   {id:'area',     icon:'location',  label:'My Area'},
   {id:'brief',    icon:'newspaper', label:'Brief'},
-  {id:'travel',   icon:'suitcase',  label:'Travel'},
+  {id:'map',      icon:'globe',     label:'4D Map'},
 ]
-const FREE = new Set(['pulse','tension','brief'])
-const SCREEN_NAMES = {pulse:'World Pulse',tension:'Tension Meter',watchlist:'Watchlist',geoedge:'GeoEdge',area:'My Area',brief:'Daily Brief',travel:'Travel Safety'}
+const NAV_NG = [
+  {id:'ng_pulse',  icon:'bolt',     label:'NG Pulse'},
+  {id:'ng_govt',   icon:'shield',   label:'Govt'},
+  {id:'ng_predict',icon:'brain',    label:'Predict'},
+  {id:'ng_economy',icon:'trending', label:'Economy'},
+  {id:'ng_agric',  icon:'fire',     label:'Agric'},
+  {id:'ng_civic',  icon:'star',     label:'Civic IQ'},
+]
+const FREE = new Set(['pulse','tension','brief','ng_pulse','ng_civic','map'])
+const SCREEN_NAMES = {
+  pulse:'World Pulse',tension:'Tension Meter',watchlist:'Watchlist',geoedge:'GeoEdge',
+  area:'My Area',brief:'Daily Brief',map:'4D Intelligence Map',
+  ng_pulse:'Nigeria Pulse',ng_govt:'Government Watch',ng_predict:'Prediction Engine',
+  ng_economy:'Nigeria Economy',ng_agric:'Agriculture',ng_civic:'Civic IQ',
+}
 
 export default function App() {
   const [screen,setScreen] = useState('pulse')
+  const [naija,setNaija]   = useState(false)   // false=Global, true=Nigeria
+  const [pidgin,setPidgin] = useState(false)   // false=English, true=Pidgin
   const [user,setUser] = useState(null)
   const [showOnboarding,setShowOnboarding] = useState(false)
   const [showAuth,setShowAuth] = useState(false)
@@ -1392,6 +1409,14 @@ export default function App() {
     area:      isGuest ? <GateWall feature="My Area" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <MyArea/>,
     brief:     <DailyBrief/>,
     travel:    isGuest ? <GateWall feature="Travel Safety" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <TravelSafety user={user}/>,
+    // Nigeria screens
+    ng_pulse:   <NigeriaPulse pidgin={pidgin}/>,
+    ng_govt:    isGuest ? <GateWall feature="Government Watch" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <GovernmentWatch pidgin={pidgin}/>,
+    ng_predict: isGuest ? <GateWall feature="Prediction Engine" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <PredictionEngine pidgin={pidgin}/>,
+    ng_economy: isGuest ? <GateWall feature="Nigeria Economy" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <NigeriaEconomy pidgin={pidgin} user={user}/>,
+    ng_agric:   isGuest ? <GateWall feature="Agriculture" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <Agriculture pidgin={pidgin}/>,
+    ng_civic:   <CivicIQ pidgin={pidgin}/>,
+    map:        <Map4D user={user}/>,
   }
 
   return (
@@ -1441,21 +1466,48 @@ export default function App() {
                 <div style={{fontSize:9,color:MUTED,letterSpacing:'0.08em',textTransform:'uppercase',marginTop:1}}>{SCREEN_NAMES[screen]}</div>
               </div>
             </div>
-            <div style={{display:'flex',gap:9,alignItems:'center'}}>
+            <div style={{display:'flex',gap:7,alignItems:'center'}}>
+              {/* Pidgin toggle — only when on Nigeria tab */}
+              {naija&&(
+                <button onClick={()=>setPidgin(p=>!p)} style={{
+                  padding:'5px 10px',borderRadius:16,border:'none',cursor:'pointer',outline:'none',
+                  background: pidgin ? `linear-gradient(135deg,#10B981,#059669)` : `linear-gradient(145deg,${BGL},${BG})`,
+                  color: pidgin ? '#fff' : MUTED,
+                  fontSize:10,fontWeight:700,boxShadow:N.raisedSm,
+                }}>{pidgin?'🗣️ Pidgin':'🗣️ English'}</button>
+              )}
               {isGuest ? (
-                <Btn sz="sm" variant="primary" onClick={()=>{setAuthMode('signup');setShowAuth(true)}}>Sign Up Free</Btn>
+                <Btn sz="sm" variant="primary" onClick={()=>{setAuthMode('signup');setShowAuth(true)}}>Sign Up</Btn>
               ) : (
                 <button onClick={handleSignOut} title={`Signed in as ${user.name}`} style={{background:'none',border:'none',cursor:'pointer',outline:'none',display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:10,boxShadow:N.raisedSm}}>
                   <I n="user" s={14} c={MUTED}/>
-                  <span style={{fontSize:11,color:MUTED,fontWeight:500,maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</span>
+                  <span style={{fontSize:11,color:MUTED,fontWeight:500,maxWidth:70,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</span>
                 </button>
               )}
               <IBtn icon="bell" size={36} badge/>
             </div>
           </div>
 
-          {/* Live ticker */}
-          <div style={{padding:'0 20px 10px'}}><LiveTicker/></div>
+          {/* Global / Nigeria tab switcher */}
+          <div style={{padding:'0 20px 10px',display:'flex',gap:8}}>
+            <button onClick={()=>{setNaija(false);setScreen('pulse')}} style={{
+              flex:1,padding:'8px',borderRadius:14,border:'none',cursor:'pointer',outline:'none',
+              background: !naija ? `linear-gradient(135deg,#3B82F6,#2563EB)` : `linear-gradient(145deg,${BGL},${BG})`,
+              color: !naija ? '#fff' : MUTED,
+              fontSize:12,fontWeight:700,boxShadow:!naija?'none':`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,
+              display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            }}>🌍 Global Intel</button>
+            <button onClick={()=>{setNaija(true);setScreen('ng_pulse')}} style={{
+              flex:1,padding:'8px',borderRadius:14,border:'none',cursor:'pointer',outline:'none',
+              background: naija ? `linear-gradient(135deg,#10B981,#059669)` : `linear-gradient(145deg,${BGL},${BG})`,
+              color: naija ? '#fff' : MUTED,
+              fontSize:12,fontWeight:700,boxShadow:naija?'none':`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,
+              display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            }}>🇳🇬 Nigeria</button>
+          </div>
+
+          {/* Live ticker — global mode only */}
+          {!naija&&<div style={{padding:'0 20px 10px'}}><LiveTicker/></div>}
 
           {/* Screen content */}
           <div key={screen} style={{flex:1,overflowY:'auto',padding:'6px 20px 0',display:'flex',flexDirection:'column',animation:'slideIn 0.28s ease both'}}>
@@ -1465,13 +1517,14 @@ export default function App() {
           {/* Bottom nav */}
           <div style={{padding:'0 16px 14px',background:`linear-gradient(0deg,${BG} 55%,rgba(13,17,23,0) 100%)`}}>
             <div style={{display:'flex',justifyContent:'space-around',alignItems:'center',background:`linear-gradient(180deg,${BGL},${BG})`,boxShadow:`0 -2px 20px ${SD},0 -1px 0 ${SL},${N.raised}`,borderRadius:22,padding:'10px 6px'}}>
-              {NAV.map(item=>{
+              {(naija ? NAV_NG : NAV).map(item=>{
                 const isA = screen===item.id
                 const gated = !FREE.has(item.id)&&isGuest
+                const activeColor = naija ? '#10B981' : BGLOW
                 return (
                   <button key={item.id} onClick={()=>handleNav(item.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'7px 10px',borderRadius:14,border:'none',background:'transparent',cursor:'pointer',outline:'none',boxShadow:isA?N.inset:'none',transition:'all 0.2s',flexShrink:0,position:'relative'}}>
-                    <I n={item.icon} s={18} c={isA?BGLOW:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 6px ${BGLOW})`:''}}/>
-                    <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:isA?BGLOW:MUTED,textShadow:isA?`0 0 8px ${BGLOW}88`:'none'}}>{item.label}</span>
+                    <I n={item.icon} s={18} c={isA?activeColor:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 6px ${activeColor})`:''}}/>
+                    <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:isA?activeColor:MUTED,textShadow:isA?`0 0 8px ${activeColor}88`:'none'}}>{item.label}</span>
                     {gated&&<span style={{position:'absolute',top:4,right:6,width:5,height:5,borderRadius:'50%',background:MUTED+'55'}}/>}
                   </button>
                 )
