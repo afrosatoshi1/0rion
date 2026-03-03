@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { NigeriaPulse, GovernmentWatch, PredictionEngine, NigeriaEconomy, Agriculture, CivicIQ } from './screens/Nigeria'
-import { Map4D } from './screens/Map4D'
+import Map4D from './screens/Map4D'
 import { supabase, hasSupabase } from './lib/supabase'
 import { generateBrief, generateLocalForecast, hasGroq } from './lib/groq'
 import { subscribeToPush, unsubscribeFromPush, notify, getPushStatus, registerSW } from './lib/push'
@@ -1319,7 +1319,7 @@ const SCREEN_NAMES = {
   pulse:'World Pulse',tension:'Tension Meter',watchlist:'Watchlist',geoedge:'GeoEdge',
   area:'My Area',brief:'Daily Brief',travel:'Travel Safety',
   ng_pulse:'Nigeria Pulse',ng_govt:'Government Watch',ng_predict:'Prediction Engine',
-  ng_economy:'Nigeria Economy',ng_agric:'Agriculture',ng_civic:'Civic IQ',ng_map:'4D Intelligence Map',
+  ng_economy:'Nigeria Economy',ng_agric:'Agriculture',ng_civic:'Civic IQ',ng_map:'4D Intelligence Map',map:'4D Intelligence Map',
 }
 
 export default function App() {
@@ -1418,6 +1418,7 @@ export default function App() {
     ng_agric:   isGuest ? <GateWall feature="Agriculture" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <Agriculture pidgin={pidgin}/>,
     ng_civic:   <CivicIQ pidgin={pidgin}/>,
     ng_map:     <Map4D user={user}/>,
+    map:        <Map4D user={user}/>,
   }
 
   const isMap = screen === 'map'
