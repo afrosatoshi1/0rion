@@ -1,6 +1,8 @@
 // 0rion Nigeria — Live Economy Data
 // All real APIs, no mock data. Falls back gracefully if API fails.
 
+import { supabase } from '../lib/supabase'
+
 // ─── Naira exchange rate (frankfurter.app — free, no key) ─
 export async function fetchNairaRate() {
   try {
@@ -75,8 +77,6 @@ export async function fetchCommodities() {
 // ─── Crowd-sourced fuel & market prices (Supabase) ────────
 // Users submit prices from their local market/filling station
 // This is stored in Supabase — real crowd-verified data
-
-import { supabase } from '../lib/supabase'
 
 export async function fetchFuelPrices() {
   if (!supabase) return { live: false, prices: [] }
