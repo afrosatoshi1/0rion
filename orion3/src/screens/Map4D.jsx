@@ -1,606 +1,260 @@
-// 0rion 4D Intelligence Map
-// Leaflet.js — world → Nigeria → state → LGA → street
-// Layers: global events + Nigerian news + community reports + time slider
-// "4D" = spatial zoom depth (world→house) + time dimension
+// 0rion 4D Map — Real-time intelligence map
+// Leaflet.js (free, no API key) 
+// Data: ACLED (security with GPS), Community reports (Supabase), RSS events (WorldMonitor)
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { fetchNGEvents } from '../api/nigeria'
-import { fetchEvents } from '../api/worldmonitor'
 import { fetchAllReports, subscribeToReports, getIncidentType, INCIDENT_TYPES, submitReport, verifyReport } from '../api/reports'
-import { supabase } from '../lib/supabase'
+import { fetchEvents } from '../api/worldmonitor'
 
 const BG='#0D1117',BGL='#141B24',SD='#070A0E',SL='rgba(255,255,255,0.06)'
 const BGLOW='#60A5FA',WHITE='#E8F0FF',MUTED='#5A7A96'
 const DANGER='#EF4444',WARNING='#F59E0B',SUCCESS='#10B981',PURPLE='#A78BFA'
-const N={
-  raised:`6px 6px 14px ${SD},-3px -3px 10px ${SL}`,
-  raisedSm:`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,
-  inset:`inset 4px 4px 10px ${SD},inset -2px -2px 7px ${SL}`,
+const N={raised:`6px 6px 14px ${SD},-3px -3px 10px ${SL}`,raisedSm:`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,inset:`inset 4px 4px 10px ${SD},inset -2px -2px 7px ${SL}`}
+const CAT_COLOR = {security:DANGER,government:PURPLE,economy:WARNING,agriculture:SUCCESS,general:BGLOW,community:SUCCESS,fire:DANGER,flood:BGLOW,health:SUCCESS,traffic:WARNING,infrastructure:MUTED}
+const SEV_COLOR  = {CRITICAL:DANGER,HIGH:WARNING,MEDIUM:BGLOW}
+
+function Surf({children,style={}}) {
+  return <div style={{background:`linear-gradient(145deg,${BGL},${BG})`,borderRadius:16,boxShadow:N.raised,border:`1px solid ${SL}`,padding:14,...style}}>{children}</div>
+}
+function Bdg({label,color=BGLOW}) {
+  return <span style={{padding:'3px 8px',borderRadius:20,background:`${color}18`,border:`1px solid ${color}33`,fontSize:10,fontWeight:700,color,letterSpacing:'0.06em',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</span>
 }
 
-const SEVERITY_COLOR = { CRITICAL: '#EF4444', HIGH: '#F59E0B', MEDIUM: '#60A5FA' }
-
-// ─── Leaflet loader ────────────────────────────────────────
-function useLeaflet() {
-  const [L, setL] = useState(null)
+function useLeaflet(onReady) {
   useEffect(() => {
-    if (window.L) { setL(window.L); return }
-    // Load Leaflet CSS
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link')
-      link.id = 'leaflet-css'
-      link.rel = 'stylesheet'
-      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'
-      document.head.appendChild(link)
-    }
-    // Load Leaflet JS
+    if (window.L) { onReady(); return }
+    const css = document.createElement('link')
+    css.rel = 'stylesheet'
+    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'
+    document.head.appendChild(css)
     const script = document.createElement('script')
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'
-    script.onload = () => setL(window.L)
+    script.onload = onReady
     document.head.appendChild(script)
   }, [])
-  return L
 }
 
-// ─── Report submission modal ───────────────────────────────
-function ReportModal({ onClose, onSubmit, userLocation }) {
-  const [type, setType]         = useState('')
-  const [desc, setDesc]         = useState('')
-  const [useGPS, setUseGPS]     = useState(true)
-  const [anonymous, setAnon]    = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [done, setDone]         = useState(false)
-
-  const handleSubmit = async () => {
-    if (!type) return
-    setSubmitting(true)
-    const loc = useGPS && userLocation ? userLocation : null
-    const result = await onSubmit({
-      type, description: desc, anonymous,
-      lat: loc?.lat, lon: loc?.lon,
-      state: loc?.state || '', lga: loc?.lga || '',
-    })
-    setSubmitting(false)
-    if (result) { setDone(true); setTimeout(onClose, 2000) }
-  }
-
-  return (
-    <div style={{position:'absolute',bottom:0,left:0,right:0,zIndex:1000,background:`linear-gradient(180deg,transparent,${BG} 8%)`,padding:'20px 16px 24px'}}>
-      <div style={{background:`linear-gradient(145deg,${BGL},${BG})`,borderRadius:20,boxShadow:`${N.raised},0 0 30px rgba(0,0,0,0.8)`,border:`1px solid ${SL}`,padding:20}}>
-        {done ? (
-          <div style={{textAlign:'center',padding:'20px 0'}}>
-            <div style={{fontSize:36,marginBottom:8}}>✅</div>
-            <div style={{fontSize:15,fontWeight:700,color:SUCCESS}}>Report submitted!</div>
-            <div style={{fontSize:12,color:MUTED,marginTop:4}}>Your community thanks you.</div>
-          </div>
-        ) : (
-          <>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-              <div style={{fontSize:14,fontWeight:700,color:WHITE}}>🚨 Report Incident</div>
-              <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:MUTED,fontSize:20,lineHeight:1,outline:'none'}}>×</button>
-            </div>
-
-            {/* Incident type grid */}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:14}}>
-              {INCIDENT_TYPES.slice(0,8).map(t => (
-                <button key={t.id} onClick={()=>setType(t.id)} style={{
-                  padding:'8px 4px',borderRadius:10,border:'none',cursor:'pointer',outline:'none',
-                  background: type===t.id ? `${t.color}22` : `linear-gradient(145deg,${BGL},${BG})`,
-                  borderWidth:1,borderStyle:'solid',borderColor: type===t.id ? `${t.color}66` : 'transparent',
-                  display:'flex',flexDirection:'column',alignItems:'center',gap:3,
-                }}>
-                  <span style={{fontSize:18}}>{t.emoji}</span>
-                  <span style={{fontSize:9,color:type===t.id?t.color:MUTED,fontWeight:600,textAlign:'center',lineHeight:1.2}}>{t.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* More types */}
-            <select value={type} onChange={e=>setType(e.target.value)} style={{
-              width:'100%',background:SD,border:`1px solid ${SL}`,borderRadius:10,
-              color:type?WHITE:MUTED,padding:'9px 12px',fontSize:12,
-              outline:'none',marginBottom:12,fontFamily:'inherit',
-            }}>
-              <option value="">— Select incident type —</option>
-              {INCIDENT_TYPES.map(t=><option key={t.id} value={t.id}>{t.emoji} {t.label}</option>)}
-            </select>
-
-            {/* Description */}
-            <textarea
-              value={desc}
-              onChange={e=>setDesc(e.target.value)}
-              placeholder="What happened? (optional — brief description helps others)"
-              maxLength={280}
-              style={{
-                width:'100%',background:SD,border:`1px solid ${SL}`,borderRadius:10,
-                color:WHITE,padding:'10px 12px',fontSize:12,resize:'none',height:72,
-                outline:'none',fontFamily:'inherit',lineHeight:1.5,
-              }}
-            />
-            <div style={{fontSize:10,color:MUTED,textAlign:'right',marginBottom:12}}>{desc.length}/280</div>
-
-            {/* Options */}
-            <div style={{display:'flex',gap:12,marginBottom:14}}>
-              <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
-                <input type="checkbox" checked={useGPS} onChange={e=>setUseGPS(e.target.checked)} style={{accentColor:BGLOW}}/>
-                <span style={{fontSize:11,color:MUTED}}>📍 Use my location</span>
-              </label>
-              <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
-                <input type="checkbox" checked={anonymous} onChange={e=>setAnon(e.target.checked)} style={{accentColor:BGLOW}}/>
-                <span style={{fontSize:11,color:MUTED}}>👤 Stay anonymous</span>
-              </label>
-            </div>
-
-            <button
-              onClick={handleSubmit}
-              disabled={!type || submitting}
-              style={{
-                width:'100%',padding:'12px',borderRadius:12,border:'none',cursor:type?'pointer':'not-allowed',
-                background: type ? `linear-gradient(135deg,#EF4444,#DC2626)` : `${BGL}`,
-                color: type ? '#fff' : MUTED,
-                fontSize:13,fontWeight:700,outline:'none',
-                opacity: submitting ? 0.7 : 1,
-              }}
-            >{submitting ? 'Submitting...' : '🚨 Submit Report'}</button>
-
-            <div style={{fontSize:10,color:MUTED,textAlign:'center',marginTop:8}}>
-              False reports are a crime. Report only what you have seen directly.
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
+function makeIcon(color, size=20, critical=false) {
+  if (!window.L) return null
+  const ring = critical ? `<circle cx="12" cy="12" r="10" fill="none" stroke="${color}" stroke-width="1" opacity="0.4"/>` : ''
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24">${ring}<circle cx="12" cy="12" r="7" fill="${color}" fill-opacity="0.3" stroke="${color}" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="${color}"/></svg>`
+  return window.L.divIcon({ html:`<div style="filter:drop-shadow(0 0 5px ${color}88)">${svg}</div>`,className:'',iconSize:[size,size],iconAnchor:[size/2,size/2] })
 }
 
-// ─── Event detail panel ────────────────────────────────────
-function EventPanel({ event, onClose, onVerify, user }) {
-  if (!event) return null
-  const isCommunity = event._type === 'community'
-  const it = isCommunity ? getIncidentType(event.type) : null
-  const color = isCommunity ? (it?.color || MUTED) : SEVERITY_COLOR[event.severity] || MUTED
-
-  function timeAgo(ts) {
-    const d = Date.now() - new Date(ts).getTime()
-    if (d < 60000) return 'just now'
-    if (d < 3600000) return `${Math.floor(d/60000)}m ago`
-    if (d < 86400000) return `${Math.floor(d/3600000)}h ago`
-    return `${Math.floor(d/86400000)}d ago`
-  }
-
-  return (
-    <div style={{position:'absolute',bottom:0,left:0,right:0,zIndex:1000,padding:'0 16px 16px'}}>
-      <div style={{background:`linear-gradient(145deg,${BGL},${BG})`,borderRadius:20,boxShadow:`${N.raised},0 0 20px rgba(0,0,0,0.8)`,border:`1px solid ${SL}`,padding:16}}>
-        <div style={{height:2,background:`linear-gradient(90deg,${color},${color}33)`,borderRadius:2,marginBottom:12}}/>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-          <div style={{flex:1,marginRight:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-              {isCommunity && <span style={{fontSize:18}}>{it?.emoji}</span>}
-              <span style={{fontSize:10,fontWeight:700,color,letterSpacing:'0.06em',textTransform:'uppercase',background:`${color}18`,padding:'2px 7px',borderRadius:10}}>
-                {isCommunity ? it?.label : event.severity}
-              </span>
-              {isCommunity && event.verified_count > 0 && (
-                <span style={{fontSize:10,color:SUCCESS}}>✓ {event.verified_count} confirmed</span>
-              )}
-            </div>
-            <div style={{fontSize:13,fontWeight:700,color:WHITE,lineHeight:1.3,marginBottom:4}}>{event.title}</div>
-            {event.description && (
-              <div style={{fontSize:11,color:MUTED,lineHeight:1.6}}>{event.description}</div>
-            )}
-            <div style={{fontSize:10,color:MUTED,marginTop:6,display:'flex',gap:8}}>
-              {(event.state||event.region) && <span>📍 {event.state||event.region}</span>}
-              <span>🕐 {timeAgo(event.created_at||event.timestamp)}</span>
-              {isCommunity && <span style={{color:WARNING}}>👥 Community Report</span>}
-              {!isCommunity && event.source && <span>{event.source}</span>}
-            </div>
-          </div>
-          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:MUTED,fontSize:20,outline:'none',flexShrink:0}}>×</button>
-        </div>
-        {isCommunity && user && (
-          <button onClick={()=>onVerify(event.id)} style={{
-            width:'100%',padding:'9px',borderRadius:10,border:`1px solid ${SUCCESS}44`,
-            background:`${SUCCESS}11`,color:SUCCESS,fontSize:12,fontWeight:600,cursor:'pointer',outline:'none',
-          }}>✓ Confirm — I saw this too</button>
-        )}
-      </div>
-    </div>
-  )
+function makeUserIcon(verified) {
+  if (!window.L) return null
+  const color = verified ? SUCCESS : WARNING
+  return window.L.divIcon({ html:`<div style="width:28px;height:28px;border-radius:50%;background:${color}33;border:2px solid ${color};display:flex;align-items:center;justify-content:center;font-size:14px;filter:drop-shadow(0 0 6px ${color})">👥</div>`,className:'',iconSize:[28,28],iconAnchor:[14,14] })
 }
 
-// ─── Main 4D Map ───────────────────────────────────────────
-export default function Map4D({ user }) {
-  const mapRef       = useRef(null)
-  const mapInstance  = useRef(null)
-  const markersRef   = useRef([])
-  const L            = useLeaflet()
+export function Map4D({ user }) {
+  const mapRef     = useRef(null)
+  const mapObj     = useRef(null)
+  const markersRef = useRef([])
+  const [ready,setReady]           = useState(false)
+  const [events,setEvents]         = useState([])
+  const [loading,setLoading]       = useState(true)
+  const [selected,setSelected]     = useState(null)
+  const [userPos,setUserPos]       = useState(null)
+  const [showReport,setShowReport] = useState(false)
+  const [tapPos,setTapPos]         = useState(null)
+  const [submitOk,setSubmitOk]     = useState(false)
+  const [submitting,setSubmitting] = useState(false)
+  const [report,setReport]         = useState({title:'',description:'',category:'security'})
+  const [layers,setLayers]         = useState({security:true,community:true,government:true,economy:false,agriculture:false})
 
-  const [events,       setEvents]       = useState([])
-  const [ngEvents,     setNgEvents]     = useState([])
-  const [reports,      setReports]      = useState([])
-  const [loading,      setLoading]      = useState(true)
-  const [showReport,   setShowReport]   = useState(false)
-  const [selectedEvent,setSelectedEvent]= useState(null)
-  const [userLocation, setUserLocation] = useState(null)
-  const [timeWindow,   setTimeWindow]   = useState(72) // hours
-  const [layers,       setLayers]       = useState({ global: true, nigeria: true, community: true })
-  const [newReportCount, setNewReportCount] = useState(0)
+  useLeaflet(()=>setReady(true))
 
-  // ─── Load all data ─────────────────────────────────────
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      const [ev, ng, rep] = await Promise.allSettled([
-        fetchEvents(),
-        fetchNGEvents('all'),
-        fetchAllReports({ hours: timeWindow }),
-      ])
-      if (ev.status === 'fulfilled')  setEvents(ev.value)
-      if (ng.status === 'fulfilled')  setNgEvents(ng.value)
-      if (rep.status === 'fulfilled') setReports(rep.value)
-      setLoading(false)
+  // Init map
+  useEffect(()=>{
+    if(!ready||mapObj.current) return
+    const L=window.L
+    const map=L.map(mapRef.current,{center:[9.082,8.675],zoom:6,zoomControl:false,attributionControl:false})
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map)
+    L.control.zoom({position:'bottomright'}).addTo(map)
+    L.control.attribution({position:'bottomleft',prefix:'© CARTO · ACLED · 0rion'}).addTo(map)
+
+    map.on('click', e => setTapPos({lat:e.latlng.lat,lon:e.latlng.lng}))
+    mapObj.current = map
+
+    if(navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const {latitude:lat,longitude:lon}=pos.coords
+        setUserPos({lat,lon})
+        map.setView([lat,lon],10)
+        const icon=L.divIcon({html:`<div style="width:18px;height:18px;border-radius:50%;background:${BGLOW};box-shadow:0 0 0 5px ${BGLOW}33,0 0 0 10px ${BGLOW}15"></div>`,className:'',iconSize:[18,18],iconAnchor:[9,9]})
+        L.marker([lat,lon],{icon}).addTo(map).bindTooltip('📍 You',{permanent:false,direction:'top'})
+      })
     }
+    return ()=>{ if(mapObj.current){mapObj.current.remove();mapObj.current=null} }
+  },[ready])
+
+  // Load events
+  useEffect(()=>{
+    const load=async()=>{ setLoading(true); const evs=await fetchNGEvents('all',userPos?.lat,userPos?.lon); setEvents(evs); setLoading(false) }
     load()
-  }, [timeWindow])
+    const t=setInterval(load,5*60*1000)
+    return()=>clearInterval(t)
+  },[userPos])
 
-  // ─── GPS location ──────────────────────────────────────
-  useEffect(() => {
-    if (!navigator.geolocation) return
-    navigator.geolocation.getCurrentPosition(
-      pos => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      () => setUserLocation({ lat: 9.082, lon: 8.6753 }) // Nigeria centre fallback
-    )
-  }, [])
-
-  // ─── Real-time new reports subscription ────────────────
-  useEffect(() => {
-    const unsub = subscribeToReports(newReport => {
-      setReports(prev => [newReport, ...prev])
-      setNewReportCount(c => c + 1)
-      // Auto-clear badge after 5s
-      setTimeout(() => setNewReportCount(c => Math.max(0, c - 1)), 5000)
-    })
-    return unsub
-  }, [])
-
-  // ─── Map coordinate lookup for events ─────────────────
-  const EVENT_COORDS = {
-    'Ukraine':      [48.379, 31.165],
-    'Russia':       [61.524, 105.318],
-    'Taiwan':       [23.698, 120.960],
-    'China':        [35.861, 104.195],
-    'Israel':       [31.046, 34.851],
-    'Iran':         [32.427, 53.688],
-    'Gaza':         [31.354, 34.308],
-    'N. Korea':     [40.339, 127.510],
-    'S. Korea':     [35.907, 127.766],
-    'Syria':        [34.802, 38.996],
-    'Iraq':         [33.223, 43.679],
-    'Yemen':        [15.552, 48.516],
-    'Nigeria':      [9.082, 8.675],
-    'Sudan':        [12.862, 30.217],
-    'Ethiopia':     [9.145, 40.489],
-    'Myanmar':      [21.913, 95.956],
-    'Afghanistan':  [33.939, 67.709],
-    'Pakistan':     [30.375, 69.345],
-    'India':        [20.593, 78.962],
-    'USA':          [37.090, -95.712],
-    'Europe':       [54.525, 15.255],
-    'Global':       [20,   0],
-  }
-  const NG_STATE_COORDS = {
-    'lagos':      [6.465, 3.406],
-    'abuja':      [9.072, 7.491],
-    'kano':       [12.002, 8.592],
-    'rivers':     [4.815, 7.049],
-    'kaduna':     [10.523, 7.438],
-    'edo':        [6.335, 5.627],
-    'borno':      [11.846, 13.160],
-    'oyo':        [7.850, 3.930],
-    'delta':      [5.680, 5.680],
-    'enugu':      [6.441, 7.498],
-    'anambra':    [6.221, 6.937],
-    'imo':        [5.572, 7.058],
-    'kogi':       [7.800, 6.741],
-    'plateau':    [9.218, 9.518],
-    'niger':      [9.638, 5.991],
-    'zamfara':    [12.170, 6.221],
-    'kebbi':      [12.452, 4.199],
-    'sokoto':     [13.064, 5.244],
-    'kwara':      [8.967, 4.387],
-    'ogun':       [6.998, 3.473],
-    'ondo':       [7.252, 5.195],
-    'ekiti':      [7.719, 5.311],
-    'osun':       [7.563, 4.559],
-    'benue':      [7.340, 8.130],
-    'nassarawa':  [8.497, 8.520],
-    'bauchi':     [10.313, 9.844],
-    'gombe':      [10.290, 11.167],
-    'adamawa':    [9.326, 12.395],
-    'yobe':       [12.294, 11.439],
-    'taraba':     [7.999, 10.773],
-    'cross river':[5.871, 8.599],
-    'akwa ibom':  [4.905, 7.853],
-    'abia':       [5.416, 7.505],
-    'bayelsa':    [4.772, 6.065],
-    'federal':    [9.072, 7.491],
-  }
-
-  // ─── Build and render map ──────────────────────────────
-  useEffect(() => {
-    if (!L || !mapRef.current) return
-    if (mapInstance.current) return // already init
-
-    // Dark map tiles (CartoDB dark matter — free)
-    mapInstance.current = L.map(mapRef.current, {
-      center: userLocation ? [userLocation.lat, userLocation.lon] : [9.082, 8.675],
-      zoom: userLocation ? 10 : 6,
-      zoomControl: false,
-    })
-
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '©OpenStreetMap ©CartoDB',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(mapInstance.current)
-
-    // Zoom control top-right
-    L.control.zoom({ position: 'topright' }).addTo(mapInstance.current)
-
-    return () => {
-      if (mapInstance.current) {
-        mapInstance.current.remove()
-        mapInstance.current = null
-      }
-    }
-  }, [L]) // eslint-disable-line
-
-  // ─── Render markers whenever data/layers change ────────
-  useEffect(() => {
-    if (!L || !mapInstance.current) return
-
-    // Clear existing markers
-    markersRef.current.forEach(m => m.remove())
-    markersRef.current = []
-
-    const addMarker = (lat, lon, color, emoji, data) => {
-      if (!lat || !lon || isNaN(lat) || isNaN(lon)) return
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="
-          width:28px;height:28px;border-radius:50%;
-          background:radial-gradient(circle at 35% 35%,${color}44,${color}22);
-          border:2px solid ${color};
-          box-shadow:0 0 10px ${color}88,0 0 20px ${color}33;
-          display:flex;align-items:center;justify-content:center;
-          font-size:13px;cursor:pointer;
-          transition:transform 0.2s;
-        ">${emoji}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      })
-      const marker = L.marker([lat, lon], { icon })
-        .addTo(mapInstance.current)
-        .on('click', () => setSelectedEvent(data))
-      markersRef.current.push(marker)
-    }
-
-    // ── Global events ──────────────────────────────────
-    if (layers.global) {
-      events.forEach(ev => {
-        const coords = EVENT_COORDS[ev.country] || EVENT_COORDS['Global']
-        // Add small random offset to prevent stacking
-        const lat = coords[0] + (Math.random() - 0.5) * 1.5
-        const lon = coords[1] + (Math.random() - 0.5) * 1.5
-        const color = SEVERITY_COLOR[ev.severity] || MUTED
-        const emoji = ev.category==='military'?'⚔️':ev.category==='cyber'?'💻':ev.category==='unrest'?'✊':'📡'
-        addMarker(lat, lon, color, emoji, { ...ev, _type: 'global' })
-      })
-    }
-
-    // ── Nigerian news events ───────────────────────────
-    if (layers.nigeria) {
-      ngEvents.forEach(ev => {
-        const coords = NG_STATE_COORDS[ev.state?.toLowerCase()] || NG_STATE_COORDS['federal']
-        const lat = coords[0] + (Math.random() - 0.5) * 0.3
-        const lon = coords[1] + (Math.random() - 0.5) * 0.3
-        const color = ev.severity==='CRITICAL'?DANGER:ev.severity==='HIGH'?WARNING:BGLOW
-        const emoji = ev.category==='security'?'🛡️':ev.category==='government'?'🏛️':ev.category==='economy'?'💰':'📰'
-        addMarker(lat, lon, color, emoji, { ...ev, _type: 'nigeria' })
-      })
-    }
-
-    // ── Community reports ──────────────────────────────
-    if (layers.community) {
-      const now = Date.now()
-      const cutoff = now - timeWindow * 60 * 60 * 1000
-      reports
-        .filter(r => new Date(r.created_at).getTime() > cutoff)
-        .forEach(r => {
-          if (!r.lat || !r.lon) return
-          const it = getIncidentType(r.type)
-          addMarker(r.lat, r.lon, it.color, it.emoji,
-            { ...r, title: r.title||it.label, _type: 'community' })
-        })
-    }
-
-    // ── User location marker ───────────────────────────
-    if (userLocation) {
-      const youIcon = L.divIcon({
-        className: '',
-        html: `<div style="
-          width:16px;height:16px;border-radius:50%;
-          background:${BGLOW};
-          border:3px solid white;
-          box-shadow:0 0 0 4px ${BGLOW}44,0 0 20px ${BGLOW}88;
-        "/>`,
-        iconSize: [16, 16], iconAnchor: [8, 8],
-      })
-      const youMarker = L.marker([userLocation.lat, userLocation.lon], { icon: youIcon, zIndexOffset: 1000 })
-        .addTo(mapInstance.current)
-      markersRef.current.push(youMarker)
-    }
-
-  }, [L, events, ngEvents, reports, layers, timeWindow, userLocation])
-
-  // ─── Submit report handler ─────────────────────────────
-  const handleSubmitReport = useCallback(async (reportData) => {
-    if (!user) return false
-    const result = await submitReport({ ...reportData, userId: user.id })
-    if (result.success) {
-      setReports(prev => [result.report, ...prev])
+  // Plot markers
+  useEffect(()=>{
+    const L=window.L
+    if(!L||!mapObj.current) return
+    markersRef.current.forEach(m=>m.remove())
+    markersRef.current=[]
+    events.filter(e=>{
+      if(!e.lat||!e.lon||isNaN(e.lat)||isNaN(e.lon)) return false
+      if(e.type==='community') return layers.community
+      if(e.category==='security') return layers.security
+      if(e.category==='government') return layers.government
+      if(e.category==='economy') return layers.economy
+      if(e.category==='agriculture') return layers.agriculture
       return true
-    }
-    return false
-  }, [user])
+    }).forEach(ev=>{
+      const color = ev.type==='community' ? (ev.verified?SUCCESS:WARNING)
+                  : SEV_COLOR[ev.severity]||BGLOW
+      const icon = ev.type==='community' ? makeUserIcon(ev.verified) : makeIcon(color,ev.severity==='CRITICAL'?26:18,ev.severity==='CRITICAL')
+      if(!icon) return
+      const m=L.marker([ev.lat,ev.lon],{icon}).addTo(mapObj.current).on('click',()=>setSelected(ev))
+      markersRef.current.push(m)
+    })
+  },[events,layers])
 
-  const handleVerify = useCallback(async (reportId) => {
-    if (!user) return
-    await verifyReport(reportId, user.id)
-    setReports(prev => prev.map(r =>
-      r.id === reportId ? { ...r, verified_count: (r.verified_count||0) + 1 } : r
-    ))
-    setSelectedEvent(prev => prev ? { ...prev, verified_count: (prev.verified_count||0) + 1 } : prev)
-  }, [user])
+  const toggle=useCallback(l=>setLayers(prev=>({...prev,[l]:!prev[l]})),[])
 
-  const toggleLayer = (key) => setLayers(prev => ({ ...prev, [key]: !prev[key] }))
+  const handleSubmit=async()=>{
+    if(!report.title||!tapPos) return
+    setSubmitting(true)
+    try {
+      await submitReport({...report, type: report.category||'other', lat:tapPos.lat, lon:tapPos.lon, userId: user?.id})
+      setSubmitOk(true); setShowReport(false)
+      setReport({title:'',description:'',category:'security'})
+      setTimeout(()=>setSubmitOk(false),4000)
+      const evs=await fetchNGEvents('all',userPos?.lat,userPos?.lon)
+      setEvents(evs)
+    } catch { alert('Submit failed. Check your connection.') }
+    setSubmitting(false)
+  }
 
-  const LAYERS = [
-    { key: 'global',    label: '🌍', title: 'Global', color: BGLOW },
-    { key: 'nigeria',   label: '🇳🇬', title: 'Nigeria', color: SUCCESS },
-    { key: 'community', label: '👥', title: 'Community', color: DANGER },
-  ]
-
-  const TIME_OPTIONS = [
-    { value: 6,   label: '6h' },
-    { value: 24,  label: '24h' },
-    { value: 72,  label: '3d' },
-    { value: 168, label: '7d' },
-  ]
-
-  const totalMarkers = (layers.global ? events.length : 0)
-    + (layers.nigeria ? ngEvents.length : 0)
-    + (layers.community ? reports.length : 0)
+  const critCount=events.filter(e=>e.severity==='CRITICAL').length
+  const commCount=events.filter(e=>e.type==='community').length
 
   return (
-    <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 16, margin: '0 -20px' }}>
+    <div style={{flex:1,position:'relative',margin:'0 -20px',overflow:'hidden'}}>
+      <style>{`
+        .leaflet-container{background:#0D1117!important}
+        .leaflet-control-zoom{border:none!important}
+        .leaflet-control-zoom a{background:${BGL}!important;color:${WHITE}!important;border:1px solid ${SL}!important}
+        .leaflet-tooltip{background:${BGL}!important;border:1px solid ${SL}!important;color:${WHITE}!important;font-size:11px!important;border-radius:8px!important;padding:5px 9px!important}
+        .leaflet-attribution-flag{display:none!important}
+      `}</style>
 
-      {/* Map container */}
-      <div ref={mapRef} style={{ flex: 1, minHeight: 0, background: '#0a0f1a' }}>
-        {(!L || loading) && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, gap: 12 }}>
-            <div style={{ fontSize: 32 }}>🌍</div>
-            <div style={{ fontSize: 13, color: MUTED }}>Loading intelligence map...</div>
-            <div style={{ fontSize: 11, color: MUTED+'88' }}>{loading ? 'Fetching live data...' : 'Rendering map...'}</div>
+      <div ref={mapRef} style={{position:'absolute',inset:0,zIndex:0}}/>
+
+      {/* Stats bar */}
+      <div style={{position:'absolute',top:8,left:8,right:8,zIndex:10,display:'flex',gap:6,justifyContent:'center',pointerEvents:'none'}}>
+        {[{l:`${events.length} Events`,c:BGLOW},{l:`${critCount} Critical`,c:DANGER},{l:`${commCount} Community`,c:SUCCESS}].map(s=>(
+          <div key={s.l} style={{background:`${BG}ee`,borderRadius:20,padding:'5px 11px',border:`1px solid ${s.c}33`}}>
+            <span style={{fontSize:10,fontWeight:700,color:s.c}}>{s.l}</span>
           </div>
-        )}
+        ))}
+        {loading&&<div style={{background:`${BG}ee`,borderRadius:20,padding:'5px 11px',border:`1px solid ${SL}`}}><span style={{fontSize:10,color:MUTED}}>●</span></div>}
       </div>
 
-      {/* Top controls bar */}
-      <div style={{
-        position: 'absolute', top: 10, left: 12, right: 12, zIndex: 500,
-        display: 'flex', gap: 6, alignItems: 'center',
-      }}>
-        {/* Layer toggles */}
-        <div style={{ display: 'flex', gap: 5, background: `${BG}CC`, borderRadius: 12, padding: '5px 8px', backdropFilter: 'blur(8px)', border: `1px solid ${SL}` }}>
-          {LAYERS.map(l => (
-            <button key={l.key} onClick={() => toggleLayer(l.key)} title={l.title} style={{
-              padding: '4px 8px', borderRadius: 8, border: 'none', cursor: 'pointer', outline: 'none', fontSize: 13,
-              background: layers[l.key] ? `${l.color}22` : 'transparent',
-              opacity: layers[l.key] ? 1 : 0.4,
-              borderWidth: 1, borderStyle: 'solid', borderColor: layers[l.key] ? `${l.color}55` : 'transparent',
-            }}>
-              {l.label}
-            </button>
-          ))}
-        </div>
+      {/* Layer toggles */}
+      <div style={{position:'absolute',top:46,right:8,zIndex:10,display:'flex',flexDirection:'column',gap:5}}>
+        {[{id:'security',l:'🛡️ Security',c:DANGER},{id:'community',l:'👥 Reports',c:SUCCESS},{id:'government',l:'🏛️ Govt',c:PURPLE},{id:'economy',l:'💰 Econ',c:WARNING},{id:'agriculture',l:'🌾 Agric',c:SUCCESS}].map(lyr=>(
+          <button key={lyr.id} onClick={()=>toggle(lyr.id)} style={{
+            padding:'6px 10px',borderRadius:10,border:`1px solid ${layers[lyr.id]?lyr.c+'55':SL}`,cursor:'pointer',outline:'none',
+            background:layers[lyr.id]?`${BGL}ee`:`${BG}bb`,color:layers[lyr.id]?lyr.c:MUTED,
+            fontSize:10,fontWeight:700,textAlign:'left',transition:'all 0.2s',
+          }}>{lyr.l}</button>
+        ))}
+      </div>
 
-        {/* Marker count */}
-        <div style={{ background: `${BG}CC`, borderRadius: 10, padding: '5px 10px', backdropFilter: 'blur(8px)', border: `1px solid ${SL}`, fontSize: 10, color: BGLOW, fontWeight: 700, fontFamily: "'SF Mono',monospace" }}>
-          {totalMarkers} events
-        </div>
-
-        {/* New report badge */}
-        {newReportCount > 0 && (
-          <div style={{ background: `${DANGER}22`, borderRadius: 10, padding: '5px 10px', border: `1px solid ${DANGER}44`, fontSize: 10, color: DANGER, fontWeight: 700, animation: 'fadeUp 0.3s ease' }}>
-            +{newReportCount} new
+      {/* Tap location hint */}
+      {tapPos&&!showReport&&(
+        <div style={{position:'absolute',bottom:140,left:'50%',transform:'translateX(-50%)',zIndex:10}}>
+          <div style={{background:`${BG}ee`,border:`1px solid ${DANGER}44`,borderRadius:20,padding:'6px 14px'}}>
+            <span style={{fontSize:11,color:DANGER}}>📍 {tapPos.lat.toFixed(3)}, {tapPos.lon.toFixed(3)} selected</span>
           </div>
-        )}
-      </div>
-
-      {/* Time slider */}
-      <div style={{
-        position: 'absolute', bottom: selectedEvent || showReport ? 180 : 70, left: 12, right: 12, zIndex: 500,
-        display: 'flex', gap: 5, justifyContent: 'center',
-      }}>
-        <div style={{ display: 'flex', gap: 4, background: `${BG}DD`, borderRadius: 10, padding: '4px 6px', backdropFilter: 'blur(8px)', border: `1px solid ${SL}` }}>
-          <span style={{ fontSize: 10, color: MUTED, padding: '3px 4px', alignSelf: 'center' }}>⏱</span>
-          {TIME_OPTIONS.map(t => (
-            <button key={t.value} onClick={() => setTimeWindow(t.value)} style={{
-              padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', outline: 'none',
-              background: timeWindow === t.value ? BGLOW : 'transparent',
-              color: timeWindow === t.value ? '#fff' : MUTED,
-              fontSize: 11, fontWeight: 600,
-            }}>{t.label}</button>
-          ))}
         </div>
-      </div>
+      )}
 
       {/* Report button */}
-      {!showReport && !selectedEvent && (
-        <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 500 }}>
-          <button onClick={() => { if (user) setShowReport(true) }} style={{
-            width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', outline: 'none',
-            background: `linear-gradient(135deg,#EF4444,#DC2626)`,
-            boxShadow: `0 4px 20px #EF444488`,
-            fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            position: 'relative',
-          }}>
-            🚨
-          </button>
-          {!user && (
-            <div style={{ position: 'absolute', bottom: 56, right: 0, background: BGL, borderRadius: 8, padding: '5px 10px', fontSize: 10, color: MUTED, whiteSpace: 'nowrap', border: `1px solid ${SL}` }}>
-              Sign in to report
+      <div style={{position:'absolute',bottom:70,left:'50%',transform:'translateX(-50%)',zIndex:10}}>
+        {submitOk&&(
+          <div style={{background:`${SUCCESS}22`,border:`1px solid ${SUCCESS}44`,borderRadius:20,padding:'7px 14px',marginBottom:8,textAlign:'center',whiteSpace:'nowrap'}}>
+            <span style={{fontSize:11,color:SUCCESS,fontWeight:700}}>✓ Submitted! Neighbours alerted.</span>
+          </div>
+        )}
+        <button onClick={()=>setShowReport(true)} style={{
+          padding:'11px 22px',borderRadius:22,border:'none',cursor:'pointer',outline:'none',
+          background:`linear-gradient(135deg,${DANGER},#DC2626)`,color:'#fff',
+          fontSize:12,fontWeight:700,boxShadow:`0 4px 18px ${DANGER}44`,
+        }}>🚨 Report Incident</button>
+      </div>
+
+      {/* Selected event */}
+      {selected&&(
+        <div style={{position:'absolute',bottom:130,left:10,right:10,zIndex:10}}>
+          <Surf style={{padding:'13px 15px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:6}}>
+                  <Bdg label={selected.severity} color={SEV_COLOR[selected.severity]}/>
+                  <Bdg label={selected.category} color={CAT_COLOR[selected.category]||BGLOW}/>
+                  {selected.type==='community'&&<Bdg label={selected.verified?'✓ Verified':'Community'} color={selected.verified?SUCCESS:WARNING}/>}
+                </div>
+                <div style={{fontWeight:700,fontSize:12,color:WHITE,lineHeight:1.4,marginBottom:4}}>{selected.title}</div>
+                {selected.description&&<div style={{fontSize:11,color:MUTED,lineHeight:1.5,marginBottom:4}}>{selected.description.slice(0,150)}{selected.description.length>150?'...':''}</div>}
+                <div style={{fontSize:10,color:MUTED}}>{selected.source} · {new Date(selected.timestamp).toLocaleDateString('en-NG')}</div>
+                {selected.link&&<a href={selected.link} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:BGLOW,textDecoration:'none',display:'block',marginTop:4}}>→ Read more</a>}
+              </div>
+              <button onClick={()=>setSelected(null)} style={{background:'none',border:'none',cursor:'pointer',color:MUTED,fontSize:20,lineHeight:1,alignSelf:'flex-start',padding:'0 2px',outline:'none'}}>×</button>
             </div>
-          )}
+          </Surf>
         </div>
       )}
 
-      {/* Legend */}
-      {!selectedEvent && !showReport && (
-        <div style={{
-          position: 'absolute', bottom: 16, left: 12, zIndex: 500,
-          background: `${BG}DD`, borderRadius: 10, padding: '8px 10px', backdropFilter: 'blur(8px)', border: `1px solid ${SL}`,
-        }}>
-          {[
-            { color: DANGER, label: 'Critical' },
-            { color: WARNING, label: 'High' },
-            { color: BGLOW, label: 'Medium' },
-            { color: DANGER, label: 'Community', dot: true },
-          ].map((l, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: i < 3 ? 4 : 0 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: l.color, boxShadow: l.dot ? `0 0 0 2px ${l.color}44` : `0 0 6px ${l.color}` }} />
-              <span style={{ fontSize: 9, color: MUTED }}>{l.label}</span>
-            </div>
-          ))}
+      {/* Report modal */}
+      {showReport&&(
+        <div style={{position:'absolute',inset:0,zIndex:20,background:`${BG}ee`,display:'flex',alignItems:'flex-end'}}>
+          <div style={{width:'100%',padding:14}}>
+            <Surf style={{padding:18}}>
+              <div style={{fontWeight:700,fontSize:14,color:WHITE,marginBottom:4}}>Report an Incident</div>
+              <div style={{fontSize:11,color:tapPos?SUCCESS:MUTED,marginBottom:14}}>
+                {tapPos?`📍 Location: ${tapPos.lat.toFixed(4)}, ${tapPos.lon.toFixed(4)}`:'⚠️ Tap the map first to set location'}
+              </div>
+              <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12}}>
+                {[{id:'security',l:'🛡️ Security'},{id:'fire',l:'🔥 Fire'},{id:'flood',l:'💧 Flood'},{id:'traffic',l:'🚗 Traffic'},{id:'health',l:'🏥 Health'},{id:'infrastructure',l:'🔧 Infra'}].map(c=>(
+                  <button key={c.id} onClick={()=>setReport(r=>({...r,category:c.id}))} style={{
+                    padding:'6px 9px',borderRadius:14,border:`1px solid ${report.category===c.id?DANGER+'55':SL}`,
+                    cursor:'pointer',outline:'none',background:report.category===c.id?`${DANGER}22`:`linear-gradient(145deg,${BGL},${BG})`,
+                    color:report.category===c.id?DANGER:MUTED,fontSize:10,fontWeight:600,
+                  }}>{c.l}</button>
+                ))}
+              </div>
+              <div style={{background:SD,borderRadius:10,padding:'10px 12px',marginBottom:10,boxShadow:N.inset}}>
+                <input value={report.title} onChange={e=>setReport(r=>({...r,title:e.target.value}))} placeholder="What happened? (required)" maxLength={120} style={{background:'none',border:'none',outline:'none',color:WHITE,fontSize:13,width:'100%',fontFamily:'inherit'}}/>
+              </div>
+              <div style={{background:SD,borderRadius:10,padding:'10px 12px',marginBottom:14,boxShadow:N.inset}}>
+                <textarea value={report.description} onChange={e=>setReport(r=>({...r,description:e.target.value}))} placeholder="More details — number of people involved, time, etc." rows={2} maxLength={280} style={{background:'none',border:'none',outline:'none',color:WHITE,fontSize:12,width:'100%',fontFamily:'inherit',resize:'none'}}/>
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setShowReport(false)} style={{flex:1,padding:'10px',borderRadius:12,border:'none',cursor:'pointer',background:`linear-gradient(145deg,${BGL},${BG})`,color:MUTED,fontSize:12,fontWeight:600,outline:'none'}}>Cancel</button>
+                <button onClick={handleSubmit} disabled={!report.title||!tapPos||submitting} style={{
+                  flex:2,padding:'10px',borderRadius:12,border:'none',cursor:'pointer',outline:'none',
+                  background:(!report.title||!tapPos||submitting)?BGL:`linear-gradient(135deg,${DANGER},#DC2626)`,
+                  color:(!report.title||!tapPos||submitting)?MUTED:'#fff',fontSize:12,fontWeight:700,
+                }}>{submitting?'Submitting...':'🚨 Submit Report'}</button>
+              </div>
+              <div style={{fontSize:10,color:MUTED,textAlign:'center',marginTop:8}}>Visible to all 0rion users in Nigeria.</div>
+            </Surf>
+          </div>
         </div>
-      )}
-
-      {/* Modals */}
-      {showReport && (
-        <ReportModal
-          onClose={() => setShowReport(false)}
-          onSubmit={handleSubmitReport}
-          userLocation={userLocation}
-        />
-      )}
-
-      {selectedEvent && !showReport && (
-        <EventPanel
-          event={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
-          onVerify={handleVerify}
-          user={user}
-        />
       )}
     </div>
   )
