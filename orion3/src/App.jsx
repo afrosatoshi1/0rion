@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { NigeriaPulse, GovernmentWatch, PredictionEngine, NigeriaEconomy, Agriculture, CivicIQ } from './screens/Nigeria'
-import Map4D from './screens/Map4D'
+import { Map4D } from './screens/Map4D'
 import { supabase, hasSupabase } from './lib/supabase'
 import { generateBrief, generateLocalForecast, hasGroq } from './lib/groq'
 import { subscribeToPush, unsubscribeFromPush, notify, getPushStatus, registerSW } from './lib/push'
@@ -1312,13 +1312,14 @@ const NAV_NG = [
   {id:'ng_economy',icon:'trending', label:'Economy'},
   {id:'ng_agric',  icon:'fire',     label:'Agric'},
   {id:'ng_civic',  icon:'star',     label:'Civic IQ'},
+  {id:'ng_map',    icon:'target',   label:'4D Map'},
 ]
-const FREE = new Set(['pulse','tension','brief','ng_pulse','ng_civic','map'])
+const FREE = new Set(['pulse','tension','brief','ng_pulse','ng_civic','ng_map'])
 const SCREEN_NAMES = {
   pulse:'World Pulse',tension:'Tension Meter',watchlist:'Watchlist',geoedge:'GeoEdge',
-  area:'My Area',brief:'Daily Brief',map:'4D Intelligence Map',
+  area:'My Area',brief:'Daily Brief',travel:'Travel Safety',
   ng_pulse:'Nigeria Pulse',ng_govt:'Government Watch',ng_predict:'Prediction Engine',
-  ng_economy:'Nigeria Economy',ng_agric:'Agriculture',ng_civic:'Civic IQ',
+  ng_economy:'Nigeria Economy',ng_agric:'Agriculture',ng_civic:'Civic IQ',ng_map:'4D Intelligence Map',
 }
 
 export default function App() {
@@ -1416,8 +1417,10 @@ export default function App() {
     ng_economy: isGuest ? <GateWall feature="Nigeria Economy" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <NigeriaEconomy pidgin={pidgin} user={user}/>,
     ng_agric:   isGuest ? <GateWall feature="Agriculture" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <Agriculture pidgin={pidgin}/>,
     ng_civic:   <CivicIQ pidgin={pidgin}/>,
-    map:        <Map4D user={user}/>,
+    ng_map:     <Map4D user={user}/>,
   }
+
+  const isMap = screen === 'map'
 
   return (
     <div style={{minHeight:'100vh',background:BG,fontFamily:"'SF Pro Display',-apple-system,BlinkMacSystemFont,sans-serif",color:WHITE,position:'relative',overflowX:'hidden',opacity:mounted?1:0,transition:'opacity 0.5s'}}>
@@ -1431,14 +1434,57 @@ export default function App() {
         input::placeholder{color:#5A7A96}
         ::-webkit-scrollbar{width:0;display:none}
         html,body{overflow:hidden;margin:0;padding:0}
+
+        /* ── Responsive breakpoints ── */
+
+        /* Mobile default: single column, bottom nav */
+        .orion-shell { display:flex; flex-direction:column; height:100vh; width:100%; }
+        .orion-sidebar { display:none; }
+        .orion-main { flex:1; display:flex; flex-direction:column; min-width:0; }
+        .orion-bottom-nav { display:flex; }
+        .orion-header-wide { display:none; }
+
+        /* Tablet 768px+: wider content, no sidebar */
+        @media(min-width:768px){
+          .orion-shell { flex-direction:row; }
+          .orion-content-area { max-width:680px; margin:0 auto; width:100%; }
+          .orion-bottom-nav { justify-content:center; gap:4px; }
+          .orion-bottom-nav button { padding:10px 18px !important; }
+          .orion-tab-switcher { max-width:680px; margin:0 auto; }
+        }
+
+        /* Desktop 1100px+: sidebar + main content */
+        @media(min-width:1100px){
+          .orion-shell { flex-direction:row; overflow:hidden; height:100vh; }
+          .orion-sidebar { 
+            display:flex; flex-direction:column;
+            width:220px; min-width:220px;
+            background:linear-gradient(180deg,#141B24,#0D1117);
+            border-right:1px solid rgba(255,255,255,0.06);
+            padding:20px 12px 24px;
+            overflow-y:auto;
+            flex-shrink:0;
+          }
+          .orion-main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+          .orion-bottom-nav { display:none !important; }
+          .orion-header-wide { display:flex; }
+          .orion-tab-switcher { display:none; }
+          .orion-tab-switcher-side { display:flex !important; }
+          .orion-content-area { max-width:900px; margin:0 auto; width:100%; }
+        }
+
+        /* Large desktop 1400px+: wider content */
+        @media(min-width:1400px){
+          .orion-sidebar { width:260px; min-width:260px; }
+          .orion-content-area { max-width:1100px; }
+        }
       `}</style>
       <StarField/>
-      <div style={{position:'fixed',top:'-10%',left:'20%',width:500,height:400,background:'radial-gradient(ellipse,rgba(59,130,246,0.03) 0%,transparent 70%)',pointerEvents:'none',zIndex:1}}/>
 
       {/* Onboarding */}
       {showOnboarding&&<Onboarding onComplete={handleOnboardingComplete}/>}
 
-      {/* Auth modal — triggered from gate walls */}
+      {/* Auth modal */}
       {showAuth&&!showOnboarding&&(
         <div style={{position:'fixed',inset:0,zIndex:300,background:BG,display:'flex',justifyContent:'center'}}>
           <div style={{width:'100%',maxWidth:480,height:'100%',display:'flex',flexDirection:'column',position:'relative'}}>
@@ -1455,84 +1501,148 @@ export default function App() {
       )}
 
       {/* Main app */}
-      {user&&<div style={{position:'fixed',inset:0,zIndex:2,display:'flex',justifyContent:'center'}}>
-        <div style={{width:'100%',maxWidth:480,height:'100%',display:'flex',flexDirection:'column',position:'relative',overflow:'hidden'}}>
-          {/* Header */}
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 20px 12px',background:`linear-gradient(180deg,${BG} 55%,rgba(13,17,23,0) 100%)`,position:'sticky',top:0,zIndex:10}}>
-            <div style={{display:'flex',alignItems:'center',gap:11}}>
-              <div style={{width:36,height:36,borderRadius:11,background:`radial-gradient(circle at 35% 35%,${BGL},${BG})`,boxShadow:`3px 3px 8px ${SD},-2px -2px 6px ${SL},0 0 12px rgba(34,211,238,0.12)`,display:'flex',alignItems:'center',justifyContent:'center'}}><Logo size={22}/></div>
+      {user&&(
+        <div className="orion-shell" style={{position:'fixed',inset:0,zIndex:2}}>
+
+          {/* ── DESKTOP SIDEBAR ── */}
+          <div className="orion-sidebar">
+            {/* Logo */}
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:28,paddingLeft:4}}>
+              <div style={{width:36,height:36,borderRadius:11,background:`radial-gradient(circle at 35% 35%,${BGL},${BG})`,boxShadow:`3px 3px 8px ${SD},-2px -2px 6px ${SL},0 0 12px rgba(34,211,238,0.12)`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Logo size={22}/></div>
               <div>
-                <div style={{fontSize:17,fontWeight:900,letterSpacing:'-0.02em',background:`linear-gradient(135deg,${WHITE},${CYAN})`,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',lineHeight:1}}>0rion</div>
-                <div style={{fontSize:9,color:MUTED,letterSpacing:'0.08em',textTransform:'uppercase',marginTop:1}}>{SCREEN_NAMES[screen]}</div>
+                <div style={{fontSize:18,fontWeight:900,letterSpacing:'-0.02em',background:`linear-gradient(135deg,${WHITE},${CYAN})`,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>0rion</div>
+                <div style={{fontSize:9,color:MUTED,letterSpacing:'0.08em',textTransform:'uppercase'}}>Intelligence</div>
               </div>
             </div>
-            <div style={{display:'flex',gap:7,alignItems:'center'}}>
-              {/* Pidgin toggle — only when on Nigeria tab */}
-              {naija&&(
-                <button onClick={()=>setPidgin(p=>!p)} style={{
-                  padding:'5px 10px',borderRadius:16,border:'none',cursor:'pointer',outline:'none',
-                  background: pidgin ? `linear-gradient(135deg,#10B981,#059669)` : `linear-gradient(145deg,${BGL},${BG})`,
-                  color: pidgin ? '#fff' : MUTED,
-                  fontSize:10,fontWeight:700,boxShadow:N.raisedSm,
-                }}>{pidgin?'🗣️ Pidgin':'🗣️ English'}</button>
-              )}
-              {isGuest ? (
-                <Btn sz="sm" variant="primary" onClick={()=>{setAuthMode('signup');setShowAuth(true)}}>Sign Up</Btn>
-              ) : (
-                <button onClick={handleSignOut} title={`Signed in as ${user.name}`} style={{background:'none',border:'none',cursor:'pointer',outline:'none',display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:10,boxShadow:N.raisedSm}}>
-                  <I n="user" s={14} c={MUTED}/>
-                  <span style={{fontSize:11,color:MUTED,fontWeight:500,maxWidth:70,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</span>
-                </button>
-              )}
-              <IBtn icon="bell" size={36} badge/>
+
+            {/* Tab switcher in sidebar */}
+            <div className="orion-tab-switcher-side" style={{display:'none',flexDirection:'column',gap:6,marginBottom:20}}>
+              <button onClick={()=>{setNaija(false);setScreen('pulse')}} style={{
+                padding:'8px 12px',borderRadius:12,border:'none',cursor:'pointer',outline:'none',textAlign:'left',
+                background: !naija ? `linear-gradient(135deg,#3B82F6,#2563EB)` : 'transparent',
+                color: !naija ? '#fff' : MUTED, fontSize:12,fontWeight:700,
+              }}>🌍 Global Intel</button>
+              <button onClick={()=>{setNaija(true);setScreen('ng_pulse')}} style={{
+                padding:'8px 12px',borderRadius:12,border:'none',cursor:'pointer',outline:'none',textAlign:'left',
+                background: naija ? `linear-gradient(135deg,#10B981,#059669)` : 'transparent',
+                color: naija ? '#fff' : MUTED, fontSize:12,fontWeight:700,
+              }}>🇳🇬 Nigeria</button>
             </div>
-          </div>
 
-          {/* Global / Nigeria tab switcher */}
-          <div style={{padding:'0 20px 10px',display:'flex',gap:8}}>
-            <button onClick={()=>{setNaija(false);setScreen('pulse')}} style={{
-              flex:1,padding:'8px',borderRadius:14,border:'none',cursor:'pointer',outline:'none',
-              background: !naija ? `linear-gradient(135deg,#3B82F6,#2563EB)` : `linear-gradient(145deg,${BGL},${BG})`,
-              color: !naija ? '#fff' : MUTED,
-              fontSize:12,fontWeight:700,boxShadow:!naija?'none':`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,
-              display:'flex',alignItems:'center',justifyContent:'center',gap:6,
-            }}>🌍 Global Intel</button>
-            <button onClick={()=>{setNaija(true);setScreen('ng_pulse')}} style={{
-              flex:1,padding:'8px',borderRadius:14,border:'none',cursor:'pointer',outline:'none',
-              background: naija ? `linear-gradient(135deg,#10B981,#059669)` : `linear-gradient(145deg,${BGL},${BG})`,
-              color: naija ? '#fff' : MUTED,
-              fontSize:12,fontWeight:700,boxShadow:naija?'none':`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,
-              display:'flex',alignItems:'center',justifyContent:'center',gap:6,
-            }}>🇳🇬 Nigeria</button>
-          </div>
-
-          {/* Live ticker — global mode only */}
-          {!naija&&<div style={{padding:'0 20px 10px'}}><LiveTicker/></div>}
-
-          {/* Screen content */}
-          <div key={screen} style={{flex:1,overflowY:'auto',padding:'6px 20px 0',display:'flex',flexDirection:'column',animation:'slideIn 0.28s ease both'}}>
-            {screens[screen]}
-          </div>
-
-          {/* Bottom nav */}
-          <div style={{padding:'0 16px 14px',background:`linear-gradient(0deg,${BG} 55%,rgba(13,17,23,0) 100%)`}}>
-            <div style={{display:'flex',justifyContent:'space-around',alignItems:'center',background:`linear-gradient(180deg,${BGL},${BG})`,boxShadow:`0 -2px 20px ${SD},0 -1px 0 ${SL},${N.raised}`,borderRadius:22,padding:'10px 6px'}}>
+            {/* Sidebar nav */}
+            <div style={{flex:1,display:'flex',flexDirection:'column',gap:2}}>
               {(naija ? NAV_NG : NAV).map(item=>{
                 const isA = screen===item.id
                 const gated = !FREE.has(item.id)&&isGuest
                 const activeColor = naija ? '#10B981' : BGLOW
                 return (
-                  <button key={item.id} onClick={()=>handleNav(item.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'7px 10px',borderRadius:14,border:'none',background:'transparent',cursor:'pointer',outline:'none',boxShadow:isA?N.inset:'none',transition:'all 0.2s',flexShrink:0,position:'relative'}}>
-                    <I n={item.icon} s={18} c={isA?activeColor:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 6px ${activeColor})`:''}}/>
-                    <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:isA?activeColor:MUTED,textShadow:isA?`0 0 8px ${activeColor}88`:'none'}}>{item.label}</span>
-                    {gated&&<span style={{position:'absolute',top:4,right:6,width:5,height:5,borderRadius:'50%',background:MUTED+'55'}}/>}
+                  <button key={item.id} onClick={()=>handleNav(item.id)} style={{
+                    display:'flex',alignItems:'center',gap:10,padding:'10px 12px',
+                    borderRadius:12,border:'none',cursor:'pointer',outline:'none',
+                    background: isA ? `linear-gradient(145deg,${BGL},${BG})` : 'transparent',
+                    boxShadow: isA ? N.inset : 'none',
+                    color: isA ? activeColor : gated ? MUTED+'66' : MUTED,
+                    textAlign:'left',width:'100%',position:'relative',
+                  }}>
+                    <I n={item.icon} s={16} c={isA?activeColor:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 5px ${activeColor})`:''}}/>
+                    <span style={{fontSize:12,fontWeight:600,color:isA?activeColor:MUTED}}>{item.label}</span>
+                    {gated&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:MUTED+'55'}}/>}
                   </button>
                 )
               })}
             </div>
+
+            {/* Sidebar user/pidgin */}
+            <div style={{borderTop:`1px solid ${SL}`,paddingTop:14,display:'flex',flexDirection:'column',gap:8}}>
+              {naija&&(
+                <button onClick={()=>setPidgin(p=>!p)} style={{
+                  padding:'8px 12px',borderRadius:10,border:'none',cursor:'pointer',outline:'none',textAlign:'left',
+                  background: pidgin ? `${SUCCESS}22` : `linear-gradient(145deg,${BGL},${BG})`,
+                  color: pidgin ? SUCCESS : MUTED, fontSize:11,fontWeight:600,boxShadow:N.raisedSm,
+                }}>{pidgin?'🗣️ Pidgin':'🗣️ English'}</button>
+              )}
+              {isGuest
+                ? <button onClick={()=>{setAuthMode('signup');setShowAuth(true)}} style={{padding:'9px 12px',borderRadius:10,border:'none',cursor:'pointer',background:`linear-gradient(135deg,#3B82F6,#2563EB)`,color:'#fff',fontSize:11,fontWeight:700,outline:'none'}}>Sign Up Free</button>
+                : <button onClick={handleSignOut} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',borderRadius:10,border:'none',cursor:'pointer',background:'transparent',outline:'none'}}>
+                    <I n="user" s={14} c={MUTED}/>
+                    <span style={{fontSize:11,color:MUTED,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</span>
+                  </button>
+              }
+            </div>
+          </div>
+
+          {/* ── MAIN CONTENT ── */}
+          <div className="orion-main">
+
+            {/* Mobile/Tablet Header */}
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 20px 12px',background:`linear-gradient(180deg,${BG} 55%,rgba(13,17,23,0) 100%)`,position:'sticky',top:0,zIndex:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:11}}>
+                <div style={{width:36,height:36,borderRadius:11,background:`radial-gradient(circle at 35% 35%,${BGL},${BG})`,boxShadow:`3px 3px 8px ${SD},-2px -2px 6px ${SL},0 0 12px rgba(34,211,238,0.12)`,display:'flex',alignItems:'center',justifyContent:'center'}}><Logo size={22}/></div>
+                <div>
+                  <div style={{fontSize:17,fontWeight:900,letterSpacing:'-0.02em',background:`linear-gradient(135deg,${WHITE},${CYAN})`,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',lineHeight:1}}>0rion</div>
+                  <div style={{fontSize:9,color:MUTED,letterSpacing:'0.08em',textTransform:'uppercase',marginTop:1}}>{SCREEN_NAMES[screen]||screen}</div>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:7,alignItems:'center'}}>
+                {naija&&(
+                  <button onClick={()=>setPidgin(p=>!p)} style={{padding:'5px 10px',borderRadius:16,border:'none',cursor:'pointer',outline:'none',background:pidgin?`linear-gradient(135deg,#10B981,#059669)`:`linear-gradient(145deg,${BGL},${BG})`,color:pidgin?'#fff':MUTED,fontSize:10,fontWeight:700,boxShadow:N.raisedSm}}>
+                    {pidgin?'🗣️ Pidgin':'🗣️ EN'}
+                  </button>
+                )}
+                {isGuest
+                  ? <Btn sz="sm" variant="primary" onClick={()=>{setAuthMode('signup');setShowAuth(true)}}>Sign Up</Btn>
+                  : <button onClick={handleSignOut} style={{background:'none',border:'none',cursor:'pointer',outline:'none',display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:10,boxShadow:N.raisedSm}}>
+                      <I n="user" s={14} c={MUTED}/>
+                      <span style={{fontSize:11,color:MUTED,fontWeight:500,maxWidth:70,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</span>
+                    </button>
+                }
+                <IBtn icon="bell" size={36} badge/>
+              </div>
+            </div>
+
+            {/* Global / Nigeria tab switcher — mobile/tablet only */}
+            <div className="orion-tab-switcher" style={{padding:'0 20px 10px',display:'flex',gap:8}}>
+              <button onClick={()=>{setNaija(false);setScreen('pulse')}} style={{flex:1,padding:'8px',borderRadius:14,border:'none',cursor:'pointer',outline:'none',background:!naija?`linear-gradient(135deg,#3B82F6,#2563EB)`:`linear-gradient(145deg,${BGL},${BG})`,color:!naija?'#fff':MUTED,fontSize:12,fontWeight:700,boxShadow:!naija?'none':`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>🌍 Global Intel</button>
+              <button onClick={()=>{setNaija(true);setScreen('ng_pulse')}} style={{flex:1,padding:'8px',borderRadius:14,border:'none',cursor:'pointer',outline:'none',background:naija?`linear-gradient(135deg,#10B981,#059669)`:`linear-gradient(145deg,${BGL},${BG})`,color:naija?'#fff':MUTED,fontSize:12,fontWeight:700,boxShadow:naija?'none':`3px 3px 8px ${SD},-2px -2px 6px ${SL}`,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>🇳🇬 Nigeria</button>
+            </div>
+
+            {/* Live ticker — global only */}
+            {!naija&&<div style={{padding:'0 20px 10px'}}><LiveTicker/></div>}
+
+            {/* Screen content */}
+            <div className="orion-content-area" style={{flex:1,display:'flex',flexDirection:'column',minHeight:0,width:'100%'}}>
+              <div key={screen} style={{
+                flex:1,
+                overflowY: isMap ? 'hidden' : 'auto',
+                padding: isMap ? 0 : '6px 20px 0',
+                display:'flex',
+                flexDirection:'column',
+                animation:'slideIn 0.28s ease both',
+              }}>
+                {screens[screen]}
+              </div>
+            </div>
+
+            {/* Bottom nav — mobile/tablet only (hidden on desktop via CSS) */}
+            <div className="orion-bottom-nav" style={{padding:'0 16px 14px',background:`linear-gradient(0deg,${BG} 55%,rgba(13,17,23,0) 100%)`}}>
+              <div style={{display:'flex',justifyContent:'space-around',alignItems:'center',background:`linear-gradient(180deg,${BGL},${BG})`,boxShadow:`0 -2px 20px ${SD},0 -1px 0 ${SL},${N.raised}`,borderRadius:22,padding:'10px 6px',width:'100%'}}>
+                {(naija ? NAV_NG : NAV).map(item=>{
+                  const isA = screen===item.id
+                  const gated = !FREE.has(item.id)&&isGuest
+                  const activeColor = naija ? '#10B981' : BGLOW
+                  return (
+                    <button key={item.id} onClick={()=>handleNav(item.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'7px 10px',borderRadius:14,border:'none',background:'transparent',cursor:'pointer',outline:'none',boxShadow:isA?N.inset:'none',transition:'all 0.2s',flexShrink:0,position:'relative'}}>
+                      <I n={item.icon} s={18} c={isA?activeColor:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 6px ${activeColor})`:''}}/>
+                      <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:isA?activeColor:MUTED,textShadow:isA?`0 0 8px ${activeColor}88`:'none'}}>{item.label}</span>
+                      {gated&&<span style={{position:'absolute',top:4,right:6,width:5,height:5,borderRadius:'50%',background:MUTED+'55'}}/>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         </div>
-      </div>}
+      )}
     </div>
   )
 }
