@@ -376,57 +376,20 @@ export async function fetchMarkets() {
   return []  // no markets available — Polymarket unreachable
 }
 
-export async function fetchBrief() {
-  return []  // Groq generates the brief live in App.jsx
-}
-
-export async function fetchHyperLocal(lat, lon) {
-  // Returns neutral base — Groq and community reports fill the real content in App.jsx
-  return {
-    city: null, lga: null, country: null, flag: null,
-    safetyScore: null, internetScore: null, trafficScore: null, infraScore: null,
-    aiforecast: null,
-    nearbyEvents: [],
-    riskPredictions: [],
-    lat, lon,
-  }
-}
-
-export async function reverseGeocode(lat, lon) {
-  {id:'m3',title:'Military flight surge — Korean Peninsula',description:'OpenSky shows 340% above baseline. USAF and ROKAF active. Surge 3+ hours above anomaly threshold.',severity:'HIGH',category:'military',country:'S. Korea',region:'NE Asia',flag:'🇰🇷',timestamp:Date.now()-840000,tags:['#military','#SKorea'],geoEdge:true,signalScore:84},
-  {id:'m4',title:'Mass protest building — Tehran',description:'ACLED reports 3,000+ demonstrators near parliament. Internet throttling detected.',severity:'MEDIUM',category:'unrest',country:'Iran',region:'Middle East',flag:'🇮🇷',timestamp:Date.now()-1380000,tags:['#unrest','#Iran'],signalScore:61},
-  {id:'m5',title:'APT-41 targeting SE Asian finance',description:'Coordinated spear-phishing against 14 institutions. IOCs match Chinese state-sponsored attribution.',severity:'CRITICAL',category:'cyber',country:'Global',region:'SE Asia',flag:'🌍',timestamp:Date.now()-1860000,tags:['#cyber','#APT41'],signalScore:88},
-  {id:'m6',title:'Drone strike reported — Red Sea corridor',description:'Houthi forces claim responsibility. Commercial shipping lane disruption confirmed.',severity:'HIGH',category:'military',country:'Yemen',region:'Middle East',flag:'🇾🇪',timestamp:Date.now()-2700000,tags:['#military','#Yemen'],signalScore:76},
-  {id:'m7',title:'Nationwide strike — French transport',description:'Rail workers walkout day 3. Major airports at 40% capacity.',severity:'MEDIUM',category:'unrest',country:'Europe',region:'Europe',flag:'🇪🇺',timestamp:Date.now()-3600000,tags:['#unrest','#Europe'],signalScore:55},
-]
-
 // ─── Live data cache ───────────────────────────────────────
 let _liveEvents = null
 let _lastFetch  = 0
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
-
-// ─── Public API ────────────────────────────────────────────
+const CACHE_TTL = 5 * 60 * 1000
 
 export async function fetchEvents() {
   if (!BASE) return MOCK_EVENTS
-
-  // Return cache if fresh
   if (_liveEvents && Date.now() - _lastFetch < CACHE_TTL) return _liveEvents
-
   try {
-    // Fetch 4 feeds in parallel — fast ones first
-    const results = await Promise.allSettled(
-      FEEDS.slice(0, 4).map(f => fetchRSS(f))
-    )
-    const allItems = results
-      .filter(r => r.status === 'fulfilled' && r.value.length > 0)
-      .flatMap(r => r.value)
-
+    const results = await Promise.allSettled(FEEDS.slice(0, 4).map(f => fetchRSS(f)))
+    const allItems = results.filter(r => r.status === 'fulfilled' && r.value.length > 0).flatMap(r => r.value)
     if (allItems.length < 3) return MOCK_EVENTS
-
     const events = itemsToEvents(allItems)
     if (events.length < 3) return MOCK_EVENTS
-
     _liveEvents = events
     _lastFetch  = Date.now()
     return events
@@ -444,6 +407,24 @@ export async function fetchRegions() {
   const events = _liveEvents || MOCK_EVENTS
   return computeRegions(events)
 }
+
+export async function fetchBrief() {
+  return []  // Groq generates the brief live in App.jsx
+}
+
+export async function fetchHyperLocal(lat, lon) {
+  // Returns neutral base — Groq and community reports fill the real content in App.jsx
+  return {
+    city: null, lga: null, country: null, flag: null,
+    safetyScore: null, internetScore: null, trafficScore: null, infraScore: null,
+    aiforecast: null,
+    nearbyEvents: [],
+    riskPredictions: [],
+    lat, lon,
+  }
+}
+
+export async function reverseGeocode(lat, lon) {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
