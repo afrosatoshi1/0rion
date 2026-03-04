@@ -6,8 +6,9 @@ import { generateBrief, generateLocalForecast, hasGroq } from './lib/groq'
 import { subscribeToPush, unsubscribeFromPush, notify, getPushStatus, registerSW } from './lib/push'
 import {
   fetchEvents, fetchCII, fetchRegions, fetchMarkets, fetchBrief,
-  fetchHyperLocal, reverseGeocode, MOCK_CII
+  fetchHyperLocal, reverseGeocode,
 } from './api/worldmonitor'
+import { fetchAllReports } from './api/reports'
 
 // ─── TOKENS ──────────────────────────────────────────────
 const BG='#0D1117',BGL='#141B24',SD='#070A0E',SL='rgba(255,255,255,0.06)'
@@ -700,10 +701,7 @@ function Watchlist({user,onUpdateUser}) {
   const loadScores = useCallback(async(wl) => {
     if (!wl.length) { setLoading(false); return }
     const data = await fetchCII(wl)
-    // fill in any missing codes with MOCK_CII
-    const found = new Set(data.map(d=>d.code))
-    const extra = MOCK_CII.filter(c=>wl.includes(c.code)&&!found.has(c.code))
-    setScores([...data,...extra])
+    setScores(data)
     setLoading(false)
   }, [])
 
@@ -723,8 +721,9 @@ function Watchlist({user,onUpdateUser}) {
     if (supabase && user.id!=='guest') await supabase.from('profiles').update({watchlist:updated.watchlist}).eq('id',user.id)
     localStorage.setItem('orion_user',JSON.stringify(updated))
     onUpdateUser(updated)
-    const newScore = MOCK_CII.find(c=>c.code===code)
-    if (newScore) setScores(s=>[...s,newScore])
+    // Load live score for newly added country
+    const newScores = await fetchCII([code])
+    if (newScores?.length) setScores(s=>[...s,...newScores])
     setAdding(false)
     show('Added to watchlist')
   }
@@ -835,7 +834,7 @@ function NearbyItem({ev,expanded,onToggle}) {
     <Surface onClick={()=>onToggle(ev.id)} style={{padding:'13px 16px',cursor:'pointer',marginBottom:9}}>
       <div style={{display:'flex',alignItems:'center',gap:12}}>
         <div style={{width:36,height:36,borderRadius:10,background:`radial-gradient(circle at 35% 35%,${BGL},${BG})`,boxShadow:`${N.raisedSm},0 0 10px ${ev.color}33`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><I n={ev.icon} s={16} c={ev.color} style={{filter:`drop-shadow(0 0 4px ${ev.color})`}}/></div>
-        <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:WHITE}}>{ev.title}</div><div style={{fontSize:11,color:MUTED,marginTop:2}}>{ev.distanceKm}km away · {ev.time}</div></div>
+        <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13,color:WHITE}}>{ev.title}</div><div style={{fontSize:11,color:MUTED,marginTop:2}}>{ev.distanceKm !== null && ev.distanceKm !== undefined ? `${ev.distanceKm}km away · ` : ''}{ev.time}</div></div>
         <I n={expanded?'chevU':'chevD'} s={14} c={MUTED}/>
       </div>
       {expanded&&<div style={{marginTop:10,fontSize:12,color:MUTED,lineHeight:1.65,paddingTop:10,borderTop:`1px solid rgba(255,255,255,0.04)`}}>{ev.description}</div>}
@@ -856,54 +855,108 @@ function MyArea() {
       // Step 1 — reverse geocode to get real city/country
       const geo = await reverseGeocode(lat, lon)
 
-      // Step 2 — fetch nearby events from live feed (filter by country)
-      const allEvents = await fetchEvents()
+      // Country → approximate capital coordinates for distance calc
+      const COUNTRY_COORDS = {
+        'Nigeria':[9.082,8.675],'Ghana':[-0.186,5.603],'Kenya':[-1.286,36.820],
+        'South Africa':[-25.746,28.188],'Egypt':[30.044,31.236],'Ethiopia':[9.145,40.489],
+        'Uganda':[0.347,32.582],'Tanzania':[-6.772,39.178],'Rwanda':[-1.943,30.060],
+        'USA':[38.907,-77.037],'UK':[51.507,-0.128],'France':[48.857,2.352],
+        'Germany':[52.520,13.405],'UAE':[25.204,55.270],'India':[28.614,77.202],
+        'China':[39.916,116.383],'Russia':[55.751,37.618],'Brazil':[-15.780,-47.930],
+        'Israel':[31.768,35.213],'Ukraine':[50.450,30.523],'Pakistan':[33.738,73.084],
+      }
+
+      // haversine distance in km
+      const hav = (lat1,lon1,lat2,lon2) => {
+        const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180
+        const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2
+        return parseFloat((R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))).toFixed(1))
+      }
+
+      // Step 2 — fetch nearby events from live feed
+      const [allEvents, communityReports] = await Promise.allSettled([
+        fetchEvents(),
+        fetchAllReports ? fetchAllReports({ hours: 48 }) : Promise.resolve([]),
+      ]).then(r => [
+        r[0].status==='fulfilled' ? r[0].value : [],
+        r[1].status==='fulfilled' ? r[1].value : [],
+      ])
+
       const nearby = allEvents
-        .filter(e => e.country === geo.country || e.region?.toLowerCase().includes(geo.country?.toLowerCase()))
+        .filter(e => e.country === geo.country || e.region?.toLowerCase().includes((geo.country||'').toLowerCase()))
         .slice(0, 5)
-        .map((e, i) => ({
-          id:          `near_${i}`,
-          title:       e.title,
-          distanceKm:  parseFloat((Math.random() * 8 + 0.5).toFixed(1)),
-          icon:        e.category === 'cyber' ? 'wifi' : e.category === 'military' ? 'shield' : 'alert',
-          color:       e.severity === 'CRITICAL' ? '#EF4444' : e.severity === 'HIGH' ? '#F59E0B' : '#5A7A96',
-          time:        `${Math.floor((Date.now() - e.timestamp) / 60000)}m ago`,
-          description: e.description,
+        .map((e, i) => {
+          // Use real country coords for distance, or signal it's national-level
+          const base = COUNTRY_COORDS[e.country]
+          const dist = base ? hav(lat, lon, base[0], base[1]) : null
+          return {
+            id:          `near_${i}`,
+            title:       e.title,
+            distanceKm:  dist !== null ? dist : null,
+            icon:        e.category==='cyber'?'wifi':e.category==='military'?'shield':'alert',
+            color:       e.severity==='CRITICAL'?'#EF4444':e.severity==='HIGH'?'#F59E0B':'#5A7A96',
+            time:        e.timestamp ? `${Math.max(1,Math.floor((Date.now()-e.timestamp)/60000))}m ago` : 'recent',
+            description: e.description,
+          }
+        })
+
+      // Community reports nearby (within 50km radius)
+      const nearbyReports = (communityReports || [])
+        .filter(r => r.lat && r.lon && hav(lat, lon, r.lat, r.lon) < 50)
+        .sort((a,b) => new Date(b.created_at)-new Date(a.created_at))
+        .slice(0, 3)
+        .map((r, i) => ({
+          id:          `rep_${i}`,
+          title:       r.title || r.type,
+          distanceKm:  hav(lat, lon, r.lat, r.lon),
+          icon:        ['fire','flood','building_collapse'].includes(r.type)?'alert':['kidnapping','gunshots','robbery','cult_clash'].includes(r.type)?'shield':'alert',
+          color:       ['kidnapping','gunshots','robbery','building_collapse','cult_clash'].includes(r.type)?'#EF4444':'#F59E0B',
+          time:        r.created_at ? `${Math.max(1,Math.floor((Date.now()-new Date(r.created_at).getTime())/60000))}m ago` : 'recent',
+          description: r.description || 'Community reported incident.',
         }))
 
-      // Step 3 — generate AI forecast with Groq if available
-      let aiforecast = `${geo.city} area looks calm. No major security concerns detected in your vicinity. Stay aware of local conditions.`
-      let safetyScore = 78, internetScore = 72, trafficScore = 40, infraScore = 82
+      const allNearby = [...nearbyReports, ...nearby].slice(0, 5)
+
+      // Risk predictions — derived from actual event counts, not random
+      const criticalNearby = allNearby.filter(e => e.color === '#EF4444').length
+      const highNearby     = allNearby.filter(e => e.color === '#F59E0B').length
+      const cyberEvents    = nearby.filter(e => e.icon === 'wifi').length
+      const infraEvents    = allEvents.filter(e => (e.category==='environmental'||e.title.toLowerCase().includes('power')||e.title.toLowerCase().includes('flood'))).length
+
+      // Step 3 — default scores based on events (Groq will override if available)
+      let aiforecast = `${geo.city || 'Your area'}: ${allNearby.length} intelligence signals detected in your region. ${criticalNearby > 0 ? 'Critical alerts active — exercise caution.' : 'No critical alerts. Stay aware of local conditions.'}`
+      let safetyScore    = Math.max(10, 90 - criticalNearby*18 - highNearby*8)
+      let internetScore  = Math.max(10, 80 - cyberEvents*12)
+      let trafficScore   = 50
+      let infraScore     = Math.max(10, 85 - infraEvents*10)
       let riskPredictions = [
-        {label:'Civil unrest (next 7 days)',   probability: nearby.filter(e=>e.icon==='alert').length * 5 + 5,  color:'#10B981'},
-        {label:'Internet disruption (next 24h)',probability: nearby.filter(e=>e.icon==='wifi').length * 8 + 10, color:'#F59E0B'},
-        {label:'Security incident (next 48h)', probability: nearby.filter(e=>e.icon==='shield').length * 6 + 4, color:'#10B981'},
-        {label:'Infrastructure issue (7 days)', probability: 15 + Math.floor(Math.random()*20),                 color:'#F59E0B'},
+        {label:'Civil unrest (next 7 days)',    probability: Math.min(90, criticalNearby*15+highNearby*5+5),  color: criticalNearby>1?'#EF4444':'#10B981'},
+        {label:'Internet disruption (next 24h)', probability: Math.min(90, cyberEvents*15+8),                 color: cyberEvents>2?'#F59E0B':'#10B981'},
+        {label:'Security incident (next 48h)',  probability: Math.min(90, criticalNearby*20+highNearby*7+4),  color: criticalNearby>0?'#EF4444':'#10B981'},
+        {label:'Infrastructure issue (7 days)', probability: Math.min(90, infraEvents*12+10),                 color: infraEvents>3?'#EF4444':'#F59E0B'},
       ]
 
       if (hasGroq) {
-        const groqResult = await generateLocalForecast(geo.city, geo.country, nearby)
+        const groqResult = await generateLocalForecast(geo.city, geo.country, allNearby)
         if (groqResult) {
-          aiforecast   = groqResult.forecast      || aiforecast
-          safetyScore  = groqResult.safetyScore   || safetyScore
-          internetScore= groqResult.internetScore || internetScore
-          trafficScore = groqResult.trafficScore  || trafficScore
-          infraScore   = groqResult.infraScore    || infraScore
+          aiforecast    = groqResult.forecast      || aiforecast
+          safetyScore   = groqResult.safetyScore   || safetyScore
+          internetScore = groqResult.internetScore || internetScore
+          trafficScore  = groqResult.trafficScore  || trafficScore
+          infraScore    = groqResult.infraScore    || infraScore
+          if (groqResult.riskPredictions) riskPredictions = groqResult.riskPredictions
         }
       }
 
       return {
-        city:            geo.city,
-        lga:             geo.country,
-        country:         geo.country,
-        flag:            geo.flag || '📍',
+        city:         geo.city,
+        lga:          geo.country,
+        country:      geo.country,
+        flag:         geo.flag || '📍',
         lat, lon,
-        safetyScore,
-        internetScore,
-        trafficScore,
-        infraScore,
+        safetyScore, internetScore, trafficScore, infraScore,
         aiforecast,
-        nearbyEvents:    nearby.length > 0 ? nearby : [{id:'l0',title:'No nearby incidents detected',distanceKm:0,icon:'shield',color:'#10B981',time:'now',description:'Your area appears calm based on current intelligence feeds.'}],
+        nearbyEvents: allNearby.length > 0 ? allNearby : [{id:'l0',title:'No nearby incidents detected',distanceKm:null,icon:'shield',color:'#10B981',time:'now',description:'Your area appears calm based on current intelligence feeds.'}],
         riskPredictions,
       }
     }
@@ -1204,7 +1257,7 @@ function DailyBrief() {
 // TRAVEL SAFETY
 // ═══════════════════════════════════════════════════════════
 // ✅ TripCard is a proper component
-function TripCard({trip,expanded,onToggle,onEnableAlerts,userId}) {
+function TripCard({trip,expanded,onToggle,onEnableAlerts,onDelete,userId}) {
   const SC = s=>s>65?DANGER:s>40?WARNING:SUCCESS
   const maxS = Math.max(...trip.stops.map(s=>s.score))
   const sc = SC(maxS)
@@ -1214,7 +1267,10 @@ function TripCard({trip,expanded,onToggle,onEnableAlerts,userId}) {
       <div style={{padding:'15px 17px'}} onClick={()=>onToggle(trip.id)}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:expanded?14:0}}>
           <div><div style={{fontWeight:700,fontSize:14,color:WHITE,marginBottom:3}}>{trip.name}</div><div style={{display:'flex',alignItems:'center',gap:7}}><I n="calendar" s={11} c={MUTED}/><span style={{fontSize:11,color:MUTED}}>{trip.dates}</span><Badge label={maxS>65?'High Risk':maxS>40?'Monitor':'Safe'} variant={maxS>65?'danger':maxS>40?'warning':'success'}/></div></div>
-          <I n={expanded?'chevU':'chevD'} s={15} c={MUTED}/>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <button onClick={e=>{e.stopPropagation();onDelete(trip.id)}} style={{background:'none',border:'none',cursor:'pointer',outline:'none',padding:4,color:MUTED,fontSize:16,lineHeight:1}} title="Remove trip">×</button>
+            <I n={expanded?'chevU':'chevD'} s={15} c={MUTED}/>
+          </div>
         </div>
         {expanded&&(
           <div style={{animation:'fadeUp 0.3s ease both'}}>
@@ -1236,14 +1292,73 @@ function TripCard({trip,expanded,onToggle,onEnableAlerts,userId}) {
 }
 
 function TravelSafety({user}) {
-  const [trips,setTrips] = useState([{id:1,name:'Dubai Business Trip',dates:'Mar 15–19',stops:[{city:'Dubai',flag:'🇦🇪',score:38,events:2},{city:'Abu Dhabi',flag:'🇦🇪',score:35,events:1}]}])
+  const [trips,setTrips] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('orion_trips') || '[]') } catch { return [] }
+  })
   const [adding,setAdding] = useState(false)
   const [newCity,setNewCity] = useState('')
   const [newDate,setNewDate] = useState('')
-  const [expanded,setExpanded] = useState(1)
+  const [addingScore,setAddingScore] = useState(false)
+  const [expanded,setExpanded] = useState(null)
   const {show,Toast} = useToast()
 
+  const saveTrips = (updated) => {
+    setTrips(updated)
+    try { localStorage.setItem('orion_trips', JSON.stringify(updated)) } catch {}
+  }
+
   const toggleTrip = useCallback((id)=>setExpanded(e=>e===id?null:id),[])
+  const enableAlerts = useCallback(async (tripId) => {
+    const trip = trips.find(t => t.id === tripId)
+    const result = await subscribeToPush(user.id)
+    if (result.ok) {
+      show(`Alerts enabled for ${trip?.name || 'this trip'}!`)
+      setTimeout(() => notify(
+        `0rion — ${trip?.name || 'Trip'} Monitoring Active`,
+        `You'll be alerted to threats in ${trip?.stops.map(s=>s.city).join(', ') || 'your destinations'}.`,
+        'HIGH'
+      ), 1500)
+    } else {
+      show(result.reason === 'denied' ? 'Please allow notifications in browser settings' : 'Could not enable alerts')
+    }
+  }, [trips, user, show])
+
+  const addTrip = async () => {
+    if (!newCity || !newDate) return
+    setAddingScore(true)
+    // Look up live CII for the destination country
+    let score = 30, events = 0
+    try {
+      const allCII = await fetchCII()
+      // Match by city name against known countries
+      const cityLower = newCity.toLowerCase()
+      const match = allCII.find(c =>
+        cityLower.includes(c.country.toLowerCase()) ||
+        c.country.toLowerCase().split(/[\s,]+/).some(w => cityLower.includes(w))
+      )
+      if (match) { score = match.score; events = match.activeSignals }
+      else {
+        // Fallback: fetch live events and count for the city
+        const liveEvents = await fetchEvents()
+        const relevant = liveEvents.filter(e => e.title.toLowerCase().includes(cityLower) || e.country.toLowerCase().includes(cityLower))
+        score = Math.min(90, relevant.filter(e=>e.severity==='CRITICAL').length*15 + relevant.filter(e=>e.severity==='HIGH').length*7)
+        events = relevant.length
+      }
+    } catch {}
+    // Detect flag from city/country name
+    const FLAGS = {nigeria:'🇳🇬',uk:'🇬🇧',usa:'🇺🇸',dubai:'🇦🇪',uae:'🇦🇪',france:'🇫🇷',germany:'🇩🇪',kenya:'🇰🇪',ghana:'🇬🇭',southafrica:'🇿🇦',china:'🇨🇳',india:'🇮🇳',brazil:'🇧🇷',canada:'🇨🇦',australia:'🇦🇺',japan:'🇯🇵',egypt:'🇪🇬',israel:'🇮🇱',ukraine:'🇺🇦',russia:'🇷🇺',turkey:'🇹🇷',saudi:'🇸🇦'}
+    const cityKey = newCity.toLowerCase().replace(/\s+/g,'')
+    const flag = Object.entries(FLAGS).find(([k])=>cityKey.includes(k))?.[1] || '🌍'
+    const newTrip = {
+      id: Date.now(),
+      name: `Trip to ${newCity}`,
+      dates: newDate,
+      stops: [{city: newCity, flag, score, events}],
+    }
+    saveTrips([...trips, newTrip])
+    setNewCity(''); setNewDate(''); setAdding(false); setAddingScore(false)
+    show(`Trip added — Threat level: ${score < 30 ? 'Low' : score < 60 ? 'Moderate' : 'High'}`)
+  }
   const enableAlerts = useCallback(async (tripId) => {
     const trip = trips.find(t => t.id === tripId)
     const result = await subscribeToPush(user.id)
@@ -1260,12 +1375,24 @@ function TravelSafety({user}) {
     }
   }, [trips, user, show])
 
+  const deleteTrip = useCallback((id) => {
+    const updated = trips.filter(t => t.id !== id)
+    saveTrips(updated)
+    show('Trip removed')
+  }, [trips])
+
   return (
     <div style={{paddingBottom:8}}>
       <Surface inset style={{padding:'11px 14px',borderRadius:12,marginBottom:14}}>
         <div style={{display:'flex',alignItems:'flex-start',gap:8}}><I n="shield" s={14} c={BGLOW} style={{filter:`drop-shadow(0 0 4px ${BGLOW})`,marginTop:1}}/><div style={{fontSize:12,color:MUTED,lineHeight:1.6}}>0rion monitors your destinations in real time. You'll get alerted the moment a threat signal appears for any city on your itinerary.</div></div>
       </Surface>
-      {trips.map(trip=><TripCard key={trip.id} trip={trip} expanded={expanded===trip.id} onToggle={toggleTrip} onEnableAlerts={enableAlerts} userId={user.id}/>)}
+      {trips.length === 0 && (
+        <Surface inset style={{padding:'20px',borderRadius:14,marginBottom:12,textAlign:'center'}}>
+          <div style={{fontSize:28,marginBottom:8}}>✈️</div>
+          <div style={{fontSize:13,color:MUTED}}>No trips yet. Add a destination to track its threat level.</div>
+        </Surface>
+      )}
+      {trips.map(trip=><TripCard key={trip.id} trip={trip} expanded={expanded===trip.id} onToggle={toggleTrip} onEnableAlerts={enableAlerts} onDelete={deleteTrip} userId={user.id}/>)}
       <Surface onClick={!adding?()=>setAdding(true):undefined} style={{padding:'16px 18px',cursor:'pointer',borderRadius:16,border:`2px dashed rgba(255,255,255,0.07)`,marginBottom:12}}>
         {!adding?(
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
@@ -1281,7 +1408,9 @@ function TravelSafety({user}) {
               </div>
             ))}
             <div style={{display:'flex',gap:8}}>
-              <Btn full variant="primary" icon="check" onClick={()=>{if(newCity&&newDate){setTrips(t=>[...t,{id:Date.now(),name:`Trip to ${newCity}`,dates:newDate,stops:[{city:newCity,flag:'🌍',score:Math.floor(Math.random()*60+10),events:Math.floor(Math.random()*5+1)}]}]);setNewCity('');setNewDate('');setAdding(false)}}} sz="md">Add Trip</Btn>
+              <Btn full variant="primary" icon="check" onClick={addTrip} disabled={!newCity||!newDate||addingScore} sz="md">
+                {addingScore ? '🔍 Checking threat level...' : 'Add Trip'}
+              </Btn>
               <Btn sz="md" variant="default" onClick={()=>setAdding(false)}>Cancel</Btn>
             </div>
           </div>
