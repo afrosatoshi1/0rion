@@ -168,7 +168,7 @@ export function NigeriaPulse({pidgin}) {
   const critCount = events.filter(e=>e.severity==='CRITICAL').length
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {/* Header stats */}
       <div style={{display:'flex',gap:8,marginBottom:12}}>
         {[
@@ -254,7 +254,7 @@ export function GovernmentWatch({pidgin}) {
   const STATUS_COLOR = {passed:'#10B981',reading:'#F59E0B',assented:'#60A5FA',rejected:'#EF4444'}
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {/* Tabs */}
       <div style={{display:'flex',gap:6,marginBottom:14}}>
         {[{id:'news',label:'📰 News'},{id:'budget',label:'💰 Budget'},{id:'nass',label:'🏛️ NASS'}].map(t=>(
@@ -366,7 +366,7 @@ export function PredictionEngine({pidgin}) {
   const sentimentColor   = bearish > bullish ? DANGER : bullish > bearish ? SUCCESS : WARNING
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {/* Header */}
       <Surf glow glowC={PURPLE} style={{padding:'16px 18px',marginBottom:14}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
@@ -543,7 +543,7 @@ export function NigeriaEconomy({ pidgin, user }) {
   )
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 8 }}>
+    <div style={{ paddingBottom: 8 }}>
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
         {[{ id: 'overview', label: '📊 Rates' }, { id: 'fuel', label: '⛽ Fuel' }, { id: 'market', label: '🛒 Market' }].map(t => (
@@ -797,7 +797,7 @@ export function Agriculture({pidgin}) {
   ]
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {/* Food security map */}
       <Surf style={{padding:'14px 16px',marginBottom:12}}>
         <div style={{fontSize:11,color:MUTED,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:10}}>Food Security by State</div>
@@ -892,7 +892,7 @@ export function CivicIQ({pidgin}) {
   )
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {/* Header */}
       <Surf style={{padding:'14px 16px',marginBottom:12}}>
         <div style={{fontWeight:700,fontSize:15,color:WHITE,marginBottom:4}}>Civic IQ</div>
