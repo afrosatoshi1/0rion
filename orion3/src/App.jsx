@@ -545,7 +545,7 @@ function WorldPulse() {
   const highC = events.filter(e=>e.severity==='HIGH').length
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {loading ? (
         <div style={{display:'flex',flexDirection:'column',gap:12}}>{[1,2,3].map(i=><Surface key={i} style={{height:120,opacity:0.4}}/>)}</div>
       ) : (
@@ -640,7 +640,7 @@ function TensionMeter() {
   const globalC = global>65?DANGER:global>45?WARNING:SUCCESS
   if(loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><I n="refresh" s={24} c={BGLOW} style={{animation:'spin 0.9s linear infinite'}}/></div>
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       <Surface style={{padding:'20px 20px 16px',textAlign:'center',marginBottom:14}}>
         <div style={{fontSize:10,color:MUTED,letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:14,fontFamily:"'SF Mono',monospace"}}>Global Tension Index</div>
         <Gauge value={global} color={globalC} size={180}/>
@@ -731,7 +731,7 @@ function Watchlist({user,onUpdateUser}) {
 
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><I n="refresh" s={24} c={BGLOW} style={{animation:'spin 0.9s linear infinite'}}/></div>
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
         <div><div style={{fontSize:14,fontWeight:700,color:WHITE}}>Tracking {user.watchlist.length}/5 countries</div><div style={{fontSize:11,color:MUTED}}>Tap for full breakdown</div></div>
         <Btn sz="sm" variant="primary" icon="plus" onClick={()=>setAdding(a=>!a)}>Add</Btn>
@@ -814,7 +814,7 @@ function GeoEdge() {
   useEffect(()=>{fetchMarkets().then(m=>{setMarkets(m);setLoading(false)});const t=setInterval(()=>fetchMarkets().then(setMarkets),60000);return()=>clearInterval(t)},[])
   if (loading) return <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}><I n="refresh" s={24} c={BGLOW} style={{animation:'spin 0.9s linear infinite'}}/></div>
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       <Surface inset style={{padding:'11px 14px',borderRadius:12,marginBottom:14}}>
         <div style={{display:'flex',alignItems:'flex-start',gap:8}}><I n="brain" s={14} c={CYAN} style={{filter:`drop-shadow(0 0 5px ${CYAN})`,marginTop:1}}/><div style={{fontSize:12,color:MUTED,lineHeight:1.6}}>0rion detects ground-truth signals before markets price them in. High divergence = potential edge. Always verify before trading.</div></div>
       </Surface>
@@ -931,7 +931,7 @@ function MyArea() {
   const toggleExpand = useCallback((id) => setExpanded(e=>e===id?null:id), [])
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       {(status==='idle'||status==='scanning')&&(
         <Surface glow glowC={status==='scanning'?BLUE:SUCCESS} style={{padding:20,marginBottom:14}}>
           <div style={{display:'flex',alignItems:'center',gap:12}}>
@@ -1118,7 +1118,7 @@ function DailyBrief() {
   const estSecs = speechDuration ? Math.round(speechDuration/1000) : Math.round((brief.map(s=>s.content).join(' ').split(' ').length/150)*60)
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       <Surface style={{padding:'18px 20px',marginBottom:14}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
           <div>
@@ -1261,7 +1261,7 @@ function TravelSafety({user}) {
   }, [trips, user, show])
 
   return (
-    <div style={{flex:1,overflowY:'auto',paddingBottom:8}}>
+    <div style={{paddingBottom:8}}>
       <Surface inset style={{padding:'11px 14px',borderRadius:12,marginBottom:14}}>
         <div style={{display:'flex',alignItems:'flex-start',gap:8}}><I n="shield" s={14} c={BGLOW} style={{filter:`drop-shadow(0 0 4px ${BGLOW})`,marginTop:1}}/><div style={{fontSize:12,color:MUTED,lineHeight:1.6}}>0rion monitors your destinations in real time. You'll get alerted the moment a threat signal appears for any city on your itinerary.</div></div>
       </Surface>
@@ -1421,7 +1421,7 @@ export default function App() {
     map:        <Map4D user={user}/>,
   }
 
-  const isMap = screen === 'map'
+  const isMap = screen === 'map' || screen === 'ng_map'
 
   return (
     <div style={{minHeight:'100vh',background:BG,fontFamily:"'SF Pro Display',-apple-system,BlinkMacSystemFont,sans-serif",color:WHITE,position:'relative',overflowX:'hidden',opacity:mounted?1:0,transition:'opacity 0.5s'}}>
@@ -1431,53 +1431,71 @@ export default function App() {
         @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
         @keyframes ripple{0%{opacity:0.7;transform:scale(1)}100%{opacity:0;transform:scale(2.6)}}
         @keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-        *{box-sizing:border-box}button{outline:none;-webkit-tap-highlight-color:transparent}
-        input::placeholder{color:#5A7A96}
+        *{box-sizing:border-box}
+        button{outline:none;-webkit-tap-highlight-color:transparent}
+        input,textarea,select{outline:none;-webkit-appearance:none}
+        input::placeholder,textarea::placeholder{color:#5A7A96}
         ::-webkit-scrollbar{width:0;display:none}
-        html,body{overflow:hidden;margin:0;padding:0}
+        html,body{
+          margin:0;padding:0;
+          height:100%;width:100%;
+          overflow:hidden;
+          -webkit-overflow-scrolling:touch;
+        }
+        #root{height:100%;width:100%;}
 
-        /* ── Responsive breakpoints ── */
+        /* ── MOBILE FIRST ── */
+        .orion-shell{
+          display:flex;flex-direction:column;
+          height:100vh;height:100dvh;
+          width:100%;overflow:hidden;
+          position:fixed;inset:0;
+        }
+        .orion-sidebar{display:none;}
+        .orion-main{
+          flex:1;display:flex;flex-direction:column;
+          min-height:0;overflow:hidden;
+        }
+        .orion-scroll{
+          flex:1;
+          overflow-y:auto;
+          overflow-x:hidden;
+          -webkit-overflow-scrolling:touch;
+          overscroll-behavior:contain;
+          min-height:0;
+        }
+        .orion-bottom-nav{display:flex;flex-shrink:0;}
+        .orion-tab-switcher{display:flex;}
+        .orion-tab-switcher-side{display:none!important;}
 
-        /* Mobile default: single column, bottom nav */
-        .orion-shell { display:flex; flex-direction:column; height:100vh; width:100%; }
-        .orion-sidebar { display:none; }
-        .orion-main { flex:1; display:flex; flex-direction:column; min-width:0; }
-        .orion-bottom-nav { display:flex; }
-        .orion-header-wide { display:none; }
-
-        /* Tablet 768px+: wider content, no sidebar */
+        /* ── TABLET 768px+ ── */
         @media(min-width:768px){
-          .orion-shell { flex-direction:row; }
-          .orion-content-area { max-width:680px; margin:0 auto; width:100%; }
-          .orion-bottom-nav { justify-content:center; gap:4px; }
-          .orion-bottom-nav button { padding:10px 18px !important; }
-          .orion-tab-switcher { max-width:680px; margin:0 auto; }
+          .orion-content-area{max-width:680px;margin:0 auto;width:100%;}
+          .orion-bottom-nav button{padding:10px 16px!important;}
         }
 
-        /* Desktop 1100px+: sidebar + main content */
+        /* ── DESKTOP 1100px+ ── */
         @media(min-width:1100px){
-          .orion-shell { flex-direction:row; overflow:hidden; height:100vh; }
-          .orion-sidebar { 
-            display:flex; flex-direction:column;
-            width:220px; min-width:220px;
+          .orion-shell{flex-direction:row;}
+          .orion-sidebar{
+            display:flex;flex-direction:column;
+            width:220px;min-width:220px;flex-shrink:0;
             background:linear-gradient(180deg,#141B24,#0D1117);
             border-right:1px solid rgba(255,255,255,0.06);
             padding:20px 12px 24px;
             overflow-y:auto;
-            flex-shrink:0;
           }
-          .orion-main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
-          .orion-bottom-nav { display:none !important; }
-          .orion-header-wide { display:flex; }
-          .orion-tab-switcher { display:none; }
-          .orion-tab-switcher-side { display:flex !important; }
-          .orion-content-area { max-width:900px; margin:0 auto; width:100%; }
+          .orion-main{flex:1;overflow:hidden;}
+          .orion-bottom-nav{display:none!important;}
+          .orion-tab-switcher{display:none!important;}
+          .orion-tab-switcher-side{display:flex!important;}
+          .orion-content-area{max-width:900px;margin:0 auto;width:100%;}
         }
 
-        /* Large desktop 1400px+: wider content */
+        /* ── LARGE DESKTOP 1400px+ ── */
         @media(min-width:1400px){
-          .orion-sidebar { width:260px; min-width:260px; }
-          .orion-content-area { max-width:1100px; }
+          .orion-sidebar{width:260px;min-width:260px;}
+          .orion-content-area{max-width:1100px;}
         }
       `}</style>
       <StarField/>
@@ -1612,14 +1630,19 @@ export default function App() {
 
             {/* Screen content */}
             <div className="orion-content-area" style={{flex:1,display:'flex',flexDirection:'column',minHeight:0,width:'100%'}}>
-              <div key={screen} style={{
-                flex:1,
-                overflowY: isMap ? 'hidden' : 'auto',
-                padding: isMap ? 0 : '6px 20px 0',
-                display:'flex',
-                flexDirection:'column',
-                animation:'slideIn 0.28s ease both',
-              }}>
+              <div
+                key={screen}
+                className={isMap ? '' : 'orion-scroll'}
+                style={{
+                  flex:1,
+                  display:'flex',
+                  flexDirection:'column',
+                  overflowY: isMap ? 'hidden' : undefined,
+                  padding: isMap ? 0 : '6px 20px 100px',
+                  animation:'slideIn 0.28s ease both',
+                  minHeight:0,
+                }}
+              >
                 {screens[screen]}
               </div>
             </div>
@@ -1632,9 +1655,9 @@ export default function App() {
                   const gated = !FREE.has(item.id)&&isGuest
                   const activeColor = naija ? '#10B981' : BGLOW
                   return (
-                    <button key={item.id} onClick={()=>handleNav(item.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'7px 10px',borderRadius:14,border:'none',background:'transparent',cursor:'pointer',outline:'none',boxShadow:isA?N.inset:'none',transition:'all 0.2s',flexShrink:0,position:'relative'}}>
-                      <I n={item.icon} s={18} c={isA?activeColor:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 6px ${activeColor})`:''}}/>
-                      <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:isA?activeColor:MUTED,textShadow:isA?`0 0 8px ${activeColor}88`:'none'}}>{item.label}</span>
+                    <button key={item.id} onClick={()=>handleNav(item.id)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'6px 6px',borderRadius:12,border:'none',background:'transparent',cursor:'pointer',outline:'none',boxShadow:isA?N.inset:'none',transition:'all 0.2s',flex:1,minWidth:0,position:'relative'}}>
+                      <I n={item.icon} s={17} c={isA?activeColor:gated?MUTED+'66':MUTED} style={{filter:isA?`drop-shadow(0 0 6px ${activeColor})`:''}}/>
+                      <span style={{fontSize:8,fontWeight:600,letterSpacing:'0.01em',color:isA?activeColor:MUTED,textShadow:isA?`0 0 8px ${activeColor}88`:'none',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'100%'}}>{item.label}</span>
                       {gated&&<span style={{position:'absolute',top:4,right:6,width:5,height:5,borderRadius:'50%',background:MUTED+'55'}}/>}
                     </button>
                   )
