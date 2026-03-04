@@ -1359,22 +1359,6 @@ function TravelSafety({user}) {
     setNewCity(''); setNewDate(''); setAdding(false); setAddingScore(false)
     show(`Trip added — Threat level: ${score < 30 ? 'Low' : score < 60 ? 'Moderate' : 'High'}`)
   }
-  const enableAlerts = useCallback(async (tripId) => {
-    const trip = trips.find(t => t.id === tripId)
-    const result = await subscribeToPush(user.id)
-    if (result.ok) {
-      show(`Alerts enabled for ${trip?.name || 'this trip'}!`)
-      // Send a test notification immediately so user knows it worked
-      setTimeout(() => notify(
-        `0rion — ${trip?.name || 'Trip'} Monitoring Active`,
-        `You'll be alerted to threats in ${trip?.stops.map(s=>s.city).join(', ') || 'your destinations'}.`,
-        'HIGH'
-      ), 1500)
-    } else {
-      show(result.reason === 'denied' ? 'Please allow notifications in browser settings' : 'Could not enable alerts')
-    }
-  }, [trips, user, show])
-
   const deleteTrip = useCallback((id) => {
     const updated = trips.filter(t => t.id !== id)
     saveTrips(updated)
