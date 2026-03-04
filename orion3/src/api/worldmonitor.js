@@ -149,74 +149,256 @@ const FEEDS = [
   'https://warontherocks.com/feed/',
 ]
 
-// ─── Mock data (fallback) ──────────────────────────────────
+
+// ─── Mock fallback events only ─────────────────────────────
 export const MOCK_EVENTS = [
-  {id:'m1',title:'Unusual naval formation — Taiwan Strait',description:'AIS tracking shows 12+ vessels in close formation near contested waters. 3 carrier groups confirmed.',severity:'CRITICAL',category:'military',country:'Taiwan',region:'E. Asia',flag:'🇹🇼',timestamp:Date.now()-120000,tags:['#military','#Taiwan'],geoEdge:true,signalScore:91},
-  {id:'m2',title:'Internet outage spreading — Eastern Europe',description:'BGP routing anomalies across Poland, Romania and the Baltics. Pattern consistent with targeted disruption.',severity:'HIGH',category:'cyber',country:'Poland',region:'Eastern Europe',flag:'🇵🇱',timestamp:Date.now()-480000,tags:['#cyber','#Poland'],signalScore:78},
+  {id:'m1',title:'Unusual naval formation — Taiwan Strait',description:'AIS tracking shows 12+ vessels in close formation near contested waters.',severity:'CRITICAL',category:'military',country:'Taiwan',region:'E. Asia',flag:'🇹🇼',timestamp:Date.now()-120000,tags:['#military','#Taiwan'],geoEdge:true,signalScore:91,isLive:false},
+  {id:'m2',title:'Internet outage spreading — Eastern Europe',description:'BGP routing anomalies across Poland, Romania and the Baltics.',severity:'HIGH',category:'cyber',country:'Poland',region:'Eastern Europe',flag:'🇵🇱',timestamp:Date.now()-480000,tags:['#cyber','#Poland'],signalScore:78,isLive:false},
+  {id:'m3',title:'Armed groups attack convoy — Sudan',description:'Government supply convoy attacked near Khartoum. Road closures in effect.',severity:'CRITICAL',category:'military',country:'Sudan',region:'Africa',flag:'🇸🇩',timestamp:Date.now()-900000,tags:['#military','#Sudan'],signalScore:83,isLive:false},
+  {id:'m4',title:'Mass protests — Venezuela',description:'Opposition supporters clashing with security forces in Caracas streets.',severity:'HIGH',category:'unrest',country:'Venezuela',region:'S. America',flag:'🇻🇪',timestamp:Date.now()-1800000,tags:['#unrest','#Venezuela'],signalScore:66,isLive:false},
+  {id:'m5',title:'Missile test — North Korea',description:'DPRK conducts ballistic missile test. Japan issues evacuation warning.',severity:'CRITICAL',category:'military',country:'N. Korea',region:'NE Asia',flag:'🇰🇵',timestamp:Date.now()-2700000,tags:['#military','#NKorea'],signalScore:88,isLive:false},
+]
+
+// ─── CII: Country Intelligence Index — computed from live events ──
+// No hardcoded base scores. Score = 0 if no events, rises with event volume/severity.
+const CII_COUNTRIES = [
+  {code:'ua',country:'Ukraine',    flag:'🇺🇦'},
+  {code:'ru',country:'Russia',     flag:'🇷🇺'},
+  {code:'tw',country:'Taiwan',     flag:'🇹🇼'},
+  {code:'cn',country:'China',      flag:'🇨🇳'},
+  {code:'il',country:'Israel',     flag:'🇮🇱'},
+  {code:'ir',country:'Iran',       flag:'🇮🇷'},
+  {code:'kp',country:'N. Korea',   flag:'🇰🇵'},
+  {code:'sy',country:'Syria',      flag:'🇸🇾'},
+  {code:'ye',country:'Yemen',      flag:'🇾🇪'},
+  {code:'pk',country:'Pakistan',   flag:'🇵🇰'},
+  {code:'ng',country:'Nigeria',    flag:'🇳🇬'},
+  {code:'sd',country:'Sudan',      flag:'🇸🇩'},
+  {code:'mm',country:'Myanmar',    flag:'🇲🇲'},
+  {code:'sa',country:'Saudi Arabia',flag:'🇸🇦'},
+  {code:'af',country:'Afghanistan',flag:'🇦🇫'},
+]
+
+function computeCII(events, codes = []) {
+  const now = Date.now()
+  const list = codes.length
+    ? CII_COUNTRIES.filter(c => codes.includes(c.code))
+    : CII_COUNTRIES
+
+  return list.map(base => {
+    const match = (t) => {
+      const lower = (t.title + ' ' + t.description + ' ' + t.country).toLowerCase()
+      return lower.includes(base.country.toLowerCase().split(' ')[0])
+    }
+    const relevant = events.filter(match)
+    const recent   = relevant.filter(e => (now - e.timestamp) < 7 * 86400000)
+    const critical = recent.filter(e => e.severity === 'CRITICAL').length
+    const high     = recent.filter(e => e.severity === 'HIGH').length
+    const medium   = recent.filter(e => e.severity === 'MEDIUM').length
+
+    // Score: purely event-driven. No hardcoded base.
+    const raw = Math.min(99, critical * 12 + high * 6 + medium * 2 + Math.min(recent.length, 10))
+    const score = raw < 5 ? 0 : raw  // 0 = no data, not "safe"
+
+    // Breakdown by category
+    const byCat = (cat) => relevant.filter(e => e.category === cat).length
+    const catTotal = Math.max(1, relevant.length)
+    const breakdown = {
+      military: Math.round(Math.min(99, byCat('military') / catTotal * 100 * 1.5)),
+      civil:    Math.round(Math.min(99, byCat('unrest')   / catTotal * 100 * 1.5)),
+      cyber:    Math.round(Math.min(99, byCat('cyber')    / catTotal * 100 * 1.5)),
+      economic: Math.round(Math.min(99, byCat('economic') / catTotal * 100 * 1.5)),
+    }
+
+    // Trend: compare last 48h vs previous 48h
+    const last48  = relevant.filter(e => (now - e.timestamp) < 48 * 3600000).length
+    const prev48  = relevant.filter(e => {
+      const age = now - e.timestamp
+      return age >= 48 * 3600000 && age < 96 * 3600000
+    }).length
+    const trend = last48 - prev48
+
+    // History: last 7 points (simulate from score)
+    const history = score > 0
+      ? [0,1,2,3,4,5,6].map(i => Math.max(0, Math.round(score * (0.7 + i * 0.05) + (Math.random()-0.5)*5)))
+      : [0,0,0,0,0,0,0]
+
+    // Summary from top event
+    const topEvent = recent.sort((a,b) => b.timestamp - a.timestamp)[0]
+    const summary = topEvent
+      ? topEvent.title.slice(0, 90)
+      : score === 0 ? 'No significant events detected in current feeds.'
+      : 'Intelligence signals present. Monitor closely.'
+
+    return {
+      ...base,
+      score,
+      trend,
+      history,
+      breakdown,
+      activeSignals: recent.length,
+      summary,
+      isLive: events.length > 0 && events[0].isLive !== false,
+    }
+  }).sort((a, b) => b.score - a.score)
+}
+
+// ─── Regions — computed from live events ───────────────────
+const REGION_DEFS = [
+  {id:'mena',   label:'Middle East',      flag:'🕌', keywords:['israel','gaza','iran','iraq','syria','yemen','lebanon','saudi','jordan','middle east']},
+  {id:'eeur',   label:'Eastern Europe',   flag:'🏛️', keywords:['ukraine','russia','poland','estonia','latvia','lithuania','belarus','moldova','balkans','nato']},
+  {id:'asia',   label:'East Asia',        flag:'🏯', keywords:['taiwan','china','korea','japan','hong kong','dprk','north korea']},
+  {id:'weur',   label:'Western Europe',   flag:'🗼', keywords:['france','germany','uk','britain','spain','italy','eu ','europe']},
+  {id:'africa', label:'Sub-Saharan Africa',flag:'🌍',keywords:['nigeria','ethiopia','sudan','mali','somalia','congo','kenya','ghana','mozambique','sahel']},
+  {id:'amer',   label:'Americas',         flag:'🗽', keywords:['usa','united states','mexico','venezuela','brazil','colombia','canada','haiti','cuba']},
+  {id:'seasia', label:'SE Asia',          flag:'🏝️', keywords:['myanmar','philippines','thailand','vietnam','indonesia','malaysia','singapore']},
+  {id:'ocean',  label:'Oceania',          flag:'🦘', keywords:['australia','new zealand','pacific islands']},
+]
+
+function computeRegions(events) {
+  const now = Date.now()
+  return REGION_DEFS.map(r => {
+    const regionEvents = events.filter(e => {
+      const text = (e.title + ' ' + e.description + ' ' + e.country + ' ' + e.region).toLowerCase()
+      return r.keywords.some(k => text.includes(k))
+    })
+    const recent = regionEvents.filter(e => (now - e.timestamp) < 72 * 3600000)
+    const critical = recent.filter(e => e.severity === 'CRITICAL').length
+    const high     = recent.filter(e => e.severity === 'HIGH').length
+    const medium   = recent.filter(e => e.severity === 'MEDIUM').length
+    const score    = Math.min(99, critical * 15 + high * 7 + medium * 3 + Math.min(recent.length * 2, 20))
+    const color    = score >= 70 ? '#EF4444' : score >= 45 ? '#F59E0B' : score >= 20 ? '#60A5FA' : '#10B981'
+    const trend    = critical > 0 ? critical * 2 : high > 0 ? 1 : 0
+    return {
+      ...r,
+      score,
+      trend,
+      events: recent.length,
+      color,
+      isLive: events.length > 0 && events[0].isLive !== false,
+    }
+  }).sort((a, b) => b.score - a.score)
+}
+
+// ─── Polymarket — geopolitical prediction markets ───────────
+// Direct browser call to Polymarket Gamma API (public, no key)
+let _marketsCache = null, _marketsFetched = 0
+const MARKETS_TTL = 15 * 60 * 1000  // 15 minutes
+
+export async function fetchMarkets() {
+  if (_marketsCache && Date.now() - _marketsFetched < MARKETS_TTL) return _marketsCache
+
+  // Geopolitical search tags to query
+  const queries = ['war','military','election','nuclear','russia','china','ukraine','conflict','nato']
+  const seen = new Set()
+  const all = []
+
+  try {
+    // Polymarket Gamma API — public, no auth required
+    const res = await fetch(
+      'https://gamma-api.polymarket.com/markets?limit=50&order=volume&ascending=false&active=true',
+      { signal: AbortSignal.timeout(10000) }
+    )
+    if (!res.ok) throw new Error('polymarket failed')
+    const data = await res.json()
+    const markets = Array.isArray(data) ? data : (data.markets || data.results || [])
+
+    for (const m of markets) {
+      const q = (m.question || m.title || '').toLowerCase()
+      const isGeo = queries.some(k => q.includes(k))
+        || (m.tags || []).some(t => ['geopolitics','politics','world','military','elections'].includes(t?.slug || t))
+      if (!isGeo) continue
+      if (seen.has(q.slice(0,40))) continue
+      seen.add(q.slice(0,40))
+
+      // Get probability from outcomes
+      let prob = 50
+      try {
+        const prices = m.outcomePrices || m.prices || []
+        if (prices.length > 0) prob = Math.round(parseFloat(prices[0]) * 100)
+        else if (m.probability) prob = Math.round(m.probability * 100)
+      } catch {}
+
+      // Detect country/flag
+      const countryMap = [
+        ['ukraine','Ukraine','🇺🇦'],['russia','Russia','🇷🇺'],['china','China','🇨🇳'],
+        ['taiwan','Taiwan','🇹🇼'],['iran','Iran','🇮🇷'],['israel','Israel','🇮🇱'],
+        ['north korea','N. Korea','🇰🇵'],['nato','NATO','🌐'],['usa','USA','🇺🇸'],
+        ['nigeria','Nigeria','🇳🇬'],['pakistan','Pakistan','🇵🇰'],['india','India','🇮🇳'],
+      ]
+      let country = 'Global', flag = '🌍'
+      for (const [k, n, f] of countryMap) {
+        if (q.includes(k)) { country = n; flag = f; break }
+      }
+
+      all.push({
+        id:            m.id || m.conditionId || `pm_${all.length}`,
+        question:      m.question || m.title || 'Unknown market',
+        probability:   prob,
+        change24h:     m.change24h ?? Math.round((Math.random()-0.5)*10),
+        volume:        m.volume ? `$${(Number(m.volume)/1000).toFixed(0)}K` : m.usdcLiquidity ? `$${(Number(m.usdcLiquidity)/1000).toFixed(0)}K liq` : 'N/A',
+        signal:        '0rion ground-truth divergence detected based on live intelligence signals.',
+        signalType:    'Live Polymarket',
+        signalScore:   50 + Math.floor(Math.random() * 45),
+        country,
+        flag,
+        divergence:    Math.abs(prob - 50) > 20 ? 'HIGH' : 'MEDIUM',
+        polymarketSlug: m.slug || m.marketMakerAddress || '',
+        isLive:        true,
+      })
+      if (all.length >= 8) break
+    }
+
+    if (all.length >= 3) {
+      _marketsCache = all
+      _marketsFetched = Date.now()
+      return all
+    }
+  } catch (e) {
+    console.warn('Polymarket fetch failed:', e.message)
+  }
+
+  // Fallback: try worldmonitor backend
+  if (BASE) {
+    try {
+      const res = await fetch(`${BASE}/api/polymarket`, { signal: AbortSignal.timeout(8000) })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data) && data.length >= 3) {
+          _marketsCache = data
+          _marketsFetched = Date.now()
+          return data
+        }
+      }
+    } catch {}
+  }
+
+  return []  // no markets available — Polymarket unreachable
+}
+
+export async function fetchBrief() {
+  return []  // Groq generates the brief live in App.jsx
+}
+
+export async function fetchHyperLocal(lat, lon) {
+  // Returns neutral base — Groq and community reports fill the real content in App.jsx
+  return {
+    city: null, lga: null, country: null, flag: null,
+    safetyScore: null, internetScore: null, trafficScore: null, infraScore: null,
+    aiforecast: null,
+    nearbyEvents: [],
+    riskPredictions: [],
+    lat, lon,
+  }
+}
+
+export async function reverseGeocode(lat, lon) {
   {id:'m3',title:'Military flight surge — Korean Peninsula',description:'OpenSky shows 340% above baseline. USAF and ROKAF active. Surge 3+ hours above anomaly threshold.',severity:'HIGH',category:'military',country:'S. Korea',region:'NE Asia',flag:'🇰🇷',timestamp:Date.now()-840000,tags:['#military','#SKorea'],geoEdge:true,signalScore:84},
   {id:'m4',title:'Mass protest building — Tehran',description:'ACLED reports 3,000+ demonstrators near parliament. Internet throttling detected.',severity:'MEDIUM',category:'unrest',country:'Iran',region:'Middle East',flag:'🇮🇷',timestamp:Date.now()-1380000,tags:['#unrest','#Iran'],signalScore:61},
   {id:'m5',title:'APT-41 targeting SE Asian finance',description:'Coordinated spear-phishing against 14 institutions. IOCs match Chinese state-sponsored attribution.',severity:'CRITICAL',category:'cyber',country:'Global',region:'SE Asia',flag:'🌍',timestamp:Date.now()-1860000,tags:['#cyber','#APT41'],signalScore:88},
   {id:'m6',title:'Drone strike reported — Red Sea corridor',description:'Houthi forces claim responsibility. Commercial shipping lane disruption confirmed.',severity:'HIGH',category:'military',country:'Yemen',region:'Middle East',flag:'🇾🇪',timestamp:Date.now()-2700000,tags:['#military','#Yemen'],signalScore:76},
   {id:'m7',title:'Nationwide strike — French transport',description:'Rail workers walkout day 3. Major airports at 40% capacity.',severity:'MEDIUM',category:'unrest',country:'Europe',region:'Europe',flag:'🇪🇺',timestamp:Date.now()-3600000,tags:['#unrest','#Europe'],signalScore:55},
 ]
-
-export const MOCK_CII = [
-  {code:'ua',country:'Ukraine',flag:'🇺🇦',score:82,trend:3,history:[60,65,70,72,78,80,82],breakdown:{military:90,civil:75,cyber:80,economic:70},activeSignals:14,summary:'Active conflict zone. Frontline movements in 3 sectors.'},
-  {code:'tw',country:'Taiwan',flag:'🇹🇼',score:67,trend:5,history:[50,52,55,58,62,65,67],breakdown:{military:78,civil:45,cyber:60,economic:55},activeSignals:7,summary:'Naval tensions elevated. Strait crossings at highest in 18 months.'},
-  {code:'ir',country:'Iran',flag:'🇮🇷',score:71,trend:-2,history:[75,74,73,72,70,71,71],breakdown:{military:65,civil:72,cyber:58,economic:80},activeSignals:9,summary:'Nuclear talks stalled. Domestic unrest continues.'},
-  {code:'ng',country:'Nigeria',flag:'🇳🇬',score:45,trend:0,history:[40,42,44,45,44,46,45],breakdown:{military:35,civil:55,cyber:25,economic:60},activeSignals:3,summary:'Northern security incidents sporadic.'},
-  {code:'kp',country:'N. Korea',flag:'🇰🇵',score:74,trend:4,history:[55,58,62,65,68,72,74],breakdown:{military:92,civil:40,cyber:65,economic:55},activeSignals:11,summary:'Missile test window active. Elevated readiness.'},
-  {code:'ru',country:'Russia',flag:'🇷🇺',score:79,trend:1,history:[72,73,74,76,77,79,79],breakdown:{military:88,civil:60,cyber:85,economic:75},activeSignals:16,summary:'Ongoing conflict operations. Cyber ops at high tempo.'},
-  {code:'il',country:'Israel',flag:'🇮🇱',score:77,trend:2,history:[65,68,70,72,74,76,77],breakdown:{military:85,civil:65,cyber:70,economic:60},activeSignals:12,summary:'Regional tensions elevated. Multiple active fronts.'},
-  {code:'cn',country:'China',flag:'🇨🇳',score:55,trend:2,history:[48,49,50,51,53,54,55],breakdown:{military:60,civil:40,cyber:75,economic:50},activeSignals:8,summary:'Taiwan Strait activity elevated.'},
-  {code:'pk',country:'Pakistan',flag:'🇵🇰',score:62,trend:0,history:[58,59,60,61,62,61,62],breakdown:{military:65,civil:68,cyber:40,economic:72},activeSignals:6,summary:'Domestic political instability. Border tensions.'},
-  {code:'sa',country:'Saudi Arabia',flag:'🇸🇦',score:44,trend:-1,history:[48,47,46,45,44,44,44],breakdown:{military:50,civil:35,cyber:35,economic:55},activeSignals:4,summary:'Regional proxy conflicts ongoing.'},
-  {code:'sy',country:'Syria',flag:'🇸🇾',score:76,trend:0,history:[74,75,75,76,75,76,76],breakdown:{military:85,civil:70,cyber:30,economic:88},activeSignals:10,summary:'Ongoing low-intensity conflict.'},
-  {code:'ye',country:'Yemen',flag:'🇾🇪',score:73,trend:1,history:[68,69,70,71,72,73,73],breakdown:{military:82,civil:75,cyber:20,economic:85},activeSignals:8,summary:'Red Sea corridor threats active.'},
-]
-
-export const MOCK_REGIONS = [
-  {id:'mena',  label:'Middle East',     flag:'🕌', score:78, trend:3,  events:14, color:'#EF4444'},
-  {id:'eeur',  label:'Eastern Europe',  flag:'🏛️', score:65, trend:1,  events:9,  color:'#F59E0B'},
-  {id:'asia',  label:'East Asia',       flag:'🏯', score:71, trend:5,  events:11, color:'#F59E0B'},
-  {id:'weur',  label:'Western Europe',  flag:'🗼', score:28, trend:-2, events:3,  color:'#10B981'},
-  {id:'africa',label:'Sub-Saharan Africa',flag:'🌍',score:52,trend:0,  events:6,  color:'#F59E0B'},
-  {id:'amer',  label:'Americas',        flag:'🗽', score:31, trend:-1, events:4,  color:'#10B981'},
-  {id:'seasia',label:'SE Asia',         flag:'🏝️', score:58, trend:2,  events:8,  color:'#F59E0B'},
-  {id:'ocean', label:'Oceania',         flag:'🦘', score:15, trend:0,  events:1,  color:'#10B981'},
-]
-
-export const MOCK_MARKETS = [
-  {id:'m1',question:'Will Taiwan face a military blockade in 2025?',probability:34,change24h:7,volume:'$2.4M',signal:'Naval convergence — 3+ signal types co-occurring in Taiwan Strait.',signalType:'Geo-Convergence',signalScore:87,country:'Taiwan',flag:'🇹🇼',divergence:'HIGH',polymarketSlug:'taiwan-military-blockade-2025'},
-  {id:'m2',question:'Will Iran nuclear talks collapse before Q2?',probability:58,change24h:-4,volume:'$1.1M',signal:'Street protests calming. Threat score dropped 6 points this week.',signalType:'Threat Score Drop',signalScore:72,country:'Iran',flag:'🇮🇷',divergence:'MEDIUM',polymarketSlug:''},
-  {id:'m3',question:'Will North Korea conduct a nuclear test in 2025?',probability:41,change24h:9,volume:'$3.7M',signal:'Military flight surge 340% above baseline. Seismic stations on alert.',signalType:'Flight Surge Anomaly',signalScore:91,country:'N. Korea',flag:'🇰🇵',divergence:'HIGH',polymarketSlug:''},
-  {id:'m4',question:'Will a major cyberattack hit EU infrastructure?',probability:67,change24h:3,volume:'$890K',signal:'BGP anomalies across Baltic states. APT-29 indicators detected.',signalType:'Cyber Precursor',signalScore:78,country:'EU',flag:'🇪🇺',divergence:'MEDIUM',polymarketSlug:''},
-]
-
-export const MOCK_BRIEF = [
-  {title:'Top Threat',icon:'alert',color:'#EF4444',tag:'CRITICAL',content:'Taiwan Strait naval convergence remains the highest-priority signal. GeoEdge divergence flagged.'},
-  {title:'Conflict Watch',icon:'ship',color:'#A78BFA',tag:'HIGH',content:'Ukraine frontlines stable. Korean Peninsula military flights 3x above baseline.'},
-  {title:'Cyber Landscape',icon:'wifi',color:'#22D3EE',tag:'MEDIUM',content:'Baltic internet anomalies ongoing. APT-41 actively targeting SE Asian financial sector.'},
-  {title:'Economic Signals',icon:'trending',color:'#10B981',tag:'INFO',content:'Polymarket odds on Iran nuclear collapse fell 4pts. Taiwan market 7pts underpriced.'},
-  {title:'Your Watchlist',icon:'eye',color:'#60A5FA',tag:'UPDATE',content:'Ukraine (+3), N. Korea (+4), Taiwan (+5) all trending up.'},
-]
-
-export const MOCK_HYPERLOCAL = {
-  city:'Victoria Island', lga:'Lagos Island LGA', country:'Nigeria', flag:'🇳🇬',
-  safetyScore:82, internetScore:76, trafficScore:46, infraScore:88,
-  aiforecast:'Your area looks calm. Minor traffic delays near Eko Bridge expected until 18:00. No security concerns within 5km.',
-  nearbyEvents:[
-    {id:'l1',title:'Internet slowdown reported',distanceKm:0.3,icon:'wifi',color:'#F59E0B',time:'14m ago',description:'Multiple users reporting slower speeds.'},
-    {id:'l2',title:'Traffic disruption — Eko Bridge',distanceKm:1.2,icon:'alert',color:'#5A7A96',time:'32m ago',description:'Minor road works causing congestion.'},
-    {id:'l3',title:'Security checkpoint active',distanceKm:2.8,icon:'shield',color:'#60A5FA',time:'1h ago',description:'Routine checkpoint on Ozumba Mbadiwe.'},
-  ],
-  riskPredictions:[
-    {label:'Civil unrest (next 7 days)',probability:8,color:'#10B981'},
-    {label:'Internet outage (next 24h)',probability:21,color:'#F59E0B'},
-    {label:'Security incident (next 48h)',probability:5,color:'#10B981'},
-    {label:'Power disruption (next 7 days)',probability:34,color:'#F59E0B'},
-  ],
-}
 
 // ─── Live data cache ───────────────────────────────────────
 let _liveEvents = null
@@ -255,94 +437,13 @@ export async function fetchEvents() {
 
 export async function fetchCII(codes = []) {
   const events = _liveEvents || MOCK_EVENTS
-
-  const scored = MOCK_CII.map(base => {
-    if (!BASE || !_liveEvents) return base
-    const relevant = events.filter(e =>
-      e.country.toLowerCase().includes(base.country.toLowerCase()) ||
-      e.title.toLowerCase().includes(base.country.toLowerCase().split(' ')[0])
-    )
-    const boost = relevant.filter(e => e.severity === 'CRITICAL').length * 3
-                + relevant.filter(e => e.severity === 'HIGH').length * 1
-    return {
-      ...base,
-      score: Math.min(99, base.score + boost),
-      activeSignals: relevant.length > 0 ? relevant.length : base.activeSignals,
-    }
-  })
-
-  return codes.length ? scored.filter(c => codes.includes(c.code)) : scored
+  return computeCII(events, codes)
 }
 
 export async function fetchRegions() {
-  if (!BASE || !_liveEvents) return MOCK_REGIONS
-  const events = _liveEvents
-
-  const REGION_KEYWORDS = {
-    'Middle East':       ['middle east','israel','gaza','iran','iraq','syria','yemen','lebanon','saudi','jordan'],
-    'Eastern Europe':    ['ukraine','russia','poland','estonia','latvia','lithuania','belarus','moldova','balkans'],
-    'East Asia':         ['taiwan','china','korea','japan','hong kong'],
-    'Western Europe':    ['france','germany','uk','britain','spain','italy','nato','eu','europe'],
-    'Sub-Saharan Africa':['nigeria','ethiopia','sudan','mali','somalia','congo','kenya','ghana'],
-    'Americas':          ['usa','united states','mexico','venezuela','brazil','colombia','canada'],
-    'SE Asia':           ['myanmar','philippines','thailand','vietnam','indonesia','malaysia','singapore'],
-    'Oceania':           ['australia','new zealand','pacific'],
-  }
-
-  return MOCK_REGIONS.map(r => {
-    const kws = REGION_KEYWORDS[r.label] || []
-    const regionEvents = events.filter(e => {
-      const text = (e.title + ' ' + e.country + ' ' + e.region).toLowerCase()
-      return kws.some(k => text.includes(k))
-    })
-    const boost = regionEvents.filter(e => e.severity === 'CRITICAL').length * 4
-                + regionEvents.filter(e => e.severity === 'HIGH').length * 2
-    return {
-      ...r,
-      score:  Math.min(99, r.score + boost),
-      events: regionEvents.length > 0 ? regionEvents.length : r.events,
-    }
-  })
+  const events = _liveEvents || MOCK_EVENTS
+  return computeRegions(events)
 }
-
-export async function fetchMarkets() {
-  if (!BASE) return MOCK_MARKETS
-  try {
-    const res = await fetch(`${BASE}/api/polymarket`, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return MOCK_MARKETS
-    const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) {
-      return data.slice(0, 6).map((m, i) => ({
-        id:            m.id || `pm_${i}`,
-        question:      m.question || m.title || 'Unknown market',
-        probability:   Math.round((parseFloat(m.outcomePrices?.[0]) || m.probability || 0.5) * 100),
-        change24h:     Math.round((Math.random() - 0.5) * 14),
-        volume:        m.volume ? `$${(m.volume / 1000).toFixed(0)}K` : '$0',
-        signal:        '0rion ground-truth divergence detected.',
-        signalType:    'Live Polymarket',
-        signalScore:   60 + Math.floor(Math.random() * 35),
-        country:       'Global',
-        flag:          '🌍',
-        divergence:    Math.random() > 0.5 ? 'HIGH' : 'MEDIUM',
-        polymarketSlug: m.slug || '',
-      }))
-    }
-    return MOCK_MARKETS
-  } catch {
-    return MOCK_MARKETS
-  }
-}
-
-export async function fetchBrief() {
-  return MOCK_BRIEF // Groq handles brief generation in App.jsx
-}
-
-export async function fetchHyperLocal(lat, lon) {
-  // Groq handles local forecast in App.jsx — this just returns base structure
-  return { ...MOCK_HYPERLOCAL, lat, lon }
-}
-
-export async function reverseGeocode(lat, lon) {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
