@@ -411,7 +411,7 @@ export default function Map4D({user}){
   const critical=[...events,...ngEvents].filter(e=>e.severity==='CRITICAL').length
 
   return(
-    <div style={{position:'relative',flex:1,display:'flex',flexDirection:'column',overflow:'hidden',borderRadius:0,margin:'0 -20px'}}>
+    <div style={{position:'relative',flex:1,display:'flex',flexDirection:'column',overflow:'hidden',borderRadius:0,margin:'0 -20px',marginBottom:-100}}>
       <style>{`
         @keyframes pulse{0%,100%{opacity:0.7;transform:scale(1)}50%{opacity:0.1;transform:scale(1.8)}}
         @keyframes bp{0%,100%{opacity:1}50%{opacity:0.3}}
@@ -465,7 +465,7 @@ export default function Map4D({user}){
 
       {/* Time filter — bottom centre */}
       {!selected&&!showForm&&(
-        <div style={{position:'absolute',bottom:70,left:'50%',transform:'translateX(-50%)',zIndex:400}}>
+        <div style={{position:'absolute',bottom:16,left:'50%',transform:'translateX(-50%)',zIndex:400}}>
           <div style={{background:`${BG}EE`,borderRadius:20,padding:'5px 8px',backdropFilter:'blur(8px)',border:`1px solid ${SL}`,display:'flex',gap:3,alignItems:'center'}}>
             <span style={{fontSize:10,color:MUTED,padding:'0 4px'}}>⏱</span>
             {[{v:6,l:'6h'},{v:24,l:'24h'},{v:48,l:'48h'},{v:168,l:'7d'}].map(t=>(
@@ -477,12 +477,12 @@ export default function Map4D({user}){
 
       {/* Report button */}
       {!showForm&&!selected&&(
-        <button onClick={()=>{if(user)setShowForm(true)}} style={{position:'absolute',bottom:70,right:16,zIndex:400,width:50,height:50,borderRadius:'50%',border:'none',cursor:user?'pointer':'not-allowed',background:`linear-gradient(135deg,${DANGER},#DC2626)`,boxShadow:`0 4px 20px ${DANGER}88`,fontSize:20,outline:'none',opacity:user?1:0.5}} title={user?'Report incident':'Sign in to report'}>🚨</button>
+        <button onClick={()=>{if(user)setShowForm(true)}} style={{position:'absolute',bottom:16,right:16,zIndex:400,width:50,height:50,borderRadius:'50%',border:'none',cursor:user?'pointer':'not-allowed',background:`linear-gradient(135deg,${DANGER},#DC2626)`,boxShadow:`0 4px 20px ${DANGER}88`,fontSize:20,outline:'none',opacity:user?1:0.5}} title={user?'Report incident':'Sign in to report'}>🚨</button>
       )}
 
       {/* Legend */}
       {!selected&&!showForm&&(
-        <div style={{position:'absolute',bottom:70,left:12,zIndex:400}}>
+        <div style={{position:'absolute',bottom:16,left:12,zIndex:400}}>
           <div style={{background:`${BG}EE`,borderRadius:10,padding:'7px 10px',backdropFilter:'blur(8px)',border:`1px solid ${SL}`}}>
             {[[DANGER,'Critical'],[WARNING,'High'],[BGLOW,'Medium'],[WARNING,'Unverified report'],[DANGER,'Verified report']].map(([c,l],i)=>(
               <div key={i} style={{display:'flex',alignItems:'center',gap:5,marginBottom:i<4?3:0}}>
