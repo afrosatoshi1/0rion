@@ -1,6 +1,6 @@
 // Budget & Parliament Tracker
 import { useState, useEffect } from 'react'
-import { BUDGET_2025, fetchParliamentActivity, fetchNGEvents, fetchLiveFAAC } from '../api/nigeria'
+import { BUDGET_2026, fetchParliamentActivity, fetchNGEvents, fetchLiveFAAC } from '../api/nigeria'
 
 const BG='#0D1117',BGL='#141B24',WHITE='#F0F6FC',MUTED='#5A7A96',CYAN='#22D3EE',SUCCESS='#10B981',DANGER='#EF4444',WARNING='#F59E0B',BLUE='#3B82F6'
 const SD='rgba(0,0,0,0.45)',SL='rgba(255,255,255,0.06)'
@@ -31,7 +31,7 @@ export default function BudgetParliament(){
   const [loading,setLoading]=useState(false)
   const [stateFilter,setStateFilter]=useState('')
   const [liveFaac,setLiveFaac]=useState(null)
-  const budget=BUDGET_2025
+  const budget=BUDGET_2026
 
   useEffect(()=>{
     if(tab==='parliament') loadParliament()
@@ -91,6 +91,26 @@ export default function BudgetParliament(){
               </div>
             ))}
           </Surface>
+
+          {budget.note&&<Surface inset style={{padding:'10px 12px',borderRadius:10,marginBottom:12}}><div style={{fontSize:11,color:WARNING,lineHeight:1.6}}>ℹ️ {budget.note}</div></Surface>}
+
+          {budget.sectorAllocations&&(
+            <Surface style={{padding:'14px 16px',marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:WHITE,marginBottom:10}}>Key Sector Allocations</div>
+              {budget.sectorAllocations.map(s=>(
+                <div key={s.label} style={{marginBottom:10}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:4}}>
+                    <span style={{color:WHITE,fontWeight:600}}>{s.label}</span>
+                    <span style={{color:s.color,fontWeight:700,fontFamily:"'SF Mono',monospace"}}>₦{(s.value/1000).toFixed(2)}T</span>
+                  </div>
+                  <div style={{height:6,borderRadius:3,background:'rgba(0,0,0,0.4)',overflow:'hidden',marginBottom:3}}>
+                    <div style={{height:'100%',width:`${Math.round(s.value/budget.totalBn*100)}%`,background:s.color,borderRadius:3,transition:'width 1s ease'}}/>
+                  </div>
+                  <div style={{fontSize:10,color:MUTED}}>{s.note}</div>
+                </div>
+              ))}
+            </Surface>
+          )}
 
           <Surface style={{padding:'14px 16px',marginBottom:12}}>
             <div style={{fontSize:13,fontWeight:700,color:WHITE,marginBottom:10}}>FAAC Sharing Formula</div>
