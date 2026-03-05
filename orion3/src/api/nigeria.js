@@ -155,67 +155,78 @@ export async function fetchParliamentActivity(events=[]){
   } catch { return {items:nassItems,summary:null,bills:[]} }
 }
 
-// ─── 2025 Federal Budget (₦54.99 trillion) ──────────────
-// Source: Federal Ministry of Finance, signed Dec 2024
-export const BUDGET_2025={
-  year:2025,
-  totalFormatted:'₦54.99 trillion',
-  totalBn:54990,
+// ─── 2026 Federal Budget ("Budget of Consolidation") ────────
+// Source: Presidency / Federal Ministry of Finance
+// Presented by President Tinubu to National Assembly, 19 Dec 2025
+// Total expenditure ₦58.18T | Revenue ₦34.33T | Deficit ₦23.85T
+export const BUDGET_2026={
+  year:2026,
+  title:'Budget of Consolidation, Renewed Resilience and Shared Prosperity',
+  totalFormatted:'\u20a658.18 trillion',
+  totalBn:58180,
+  revenueFormatted:'\u20a634.33 trillion',
+  revenueBn:34330,
   breakdown:[
-    {label:'Debt Service',    value:14320, pct:26.0, color:'#EF4444', icon:'alert',    note:'Largest single item. Paying back past borrowing.'},
-    {label:'Recurrent (Non-debt)', value:25430, pct:46.3, color:'#F59E0B', icon:'trending', note:'Salaries, overhead, running government offices.'},
-    {label:'Capital Expenditure',  value:14790, pct:26.9, color:'#10B981', icon:'shield',  note:'Roads, hospitals, schools, infrastructure.'},
-    {label:'Statutory Transfers',  value:450,   pct:0.8,  color:'#60A5FA', icon:'star',    note:'UBEC, NDDC, NJC and other statutory bodies.'},
+    {label:'Capital Expenditure',  value:26080, pct:44.8, color:'#10B981', icon:'shield',   note:'Largest capital budget in Nigerian history. Roads, hospitals, schools, power.'},
+    {label:'Debt Service',         value:15520, pct:26.7, color:'#EF4444', icon:'alert',    note:'Includes \u20a63.19T sinking fund. Paying back past borrowing — growing every year.'},
+    {label:'Recurrent (Non-debt)', value:15250, pct:26.2, color:'#F59E0B', icon:'trending', note:'Personnel \u20a610.75T, overheads \u20a62.22T. Salaries, pensions, running costs.'},
+    {label:'Statutory Transfers',  value:4100,  pct:7.0,  color:'#60A5FA', icon:'star',     note:'UBEC, NDDC, NJC, Revenue Mobilization and other statutory bodies.'},
   ],
-  deficit:{value:'₦13.08 trillion',gdpPct:'3.89%',financed:'Domestic bonds + multilateral loans (World Bank, IMF)'},
+  sectorAllocations:[
+    {label:'Defence & Security', value:5410, color:'#EF4444', note:'Army \u20a61.5T · Navy \u20a6444B · Air Force \u20a6407B + DSS, Police'},
+    {label:'Infrastructure',     value:3560, color:'#F59E0B', note:'Roads, bridges, power grid, urban development'},
+    {label:'Education',          value:3520, color:'#3B82F6', note:'NELFUND (788K+ students) · vocational training · school infrastructure'},
+    {label:'Health',             value:2480, color:'#10B981', note:'6% of total budget · primary care expansion · disease prevention'},
+  ],
+  deficit:{value:'\u20a623.85 trillion',gdpPct:'4.28%',financed:'Domestic bonds + concessional multilateral loans (World Bank, IMF, AfDB)'},
   faac:{federal:52.68,state:26.72,lga:20.60},
-  oilPrice:{assumed:75,unit:'USD/barrel'},
-  exchangeRate:{assumed:1400,unit:'₦/USD'},
-  source:'Federal Ministry of Finance / National Assembly / BudgIT',
-  // All 37 states + FCT — monthly FAAC estimates (FY 2025, rounded)
+  oilPrice:{assumed:64.85,unit:'USD/barrel'},
+  oilProduction:{assumed:1.84,unit:'mbpd'},
+  exchangeRate:{assumed:1400,unit:'\u20a6/USD'},
+  source:'Statehouse.gov.ng / Federal Ministry of Finance / National Assembly',
+  note:'Single-budget cycle introduced — no more rollover budgets from 2026.',
   stateAllocations:[
-    {state:'Lagos',       amount:'₦102.3B', amountBn:102.3, pop:'16M',  perCapita:'₦6,394'},
-    {state:'Rivers',      amount:'₦88.6B',  amountBn:88.6,  pop:'7.3M', perCapita:'₦12,137'},
-    {state:'Delta',       amount:'₦82.4B',  amountBn:82.4,  pop:'5.7M', perCapita:'₦14,456'},
-    {state:'Akwa Ibom',   amount:'₦79.1B',  amountBn:79.1,  pop:'5.5M', perCapita:'₦14,382'},
-    {state:'Kano',        amount:'₦76.8B',  amountBn:76.8,  pop:'14M',  perCapita:'₦5,486'},
-    {state:'Bayelsa',     amount:'₦61.2B',  amountBn:61.2,  pop:'2.3M', perCapita:'₦26,609'},
-    {state:'Imo',         amount:'₦55.4B',  amountBn:55.4,  pop:'5.4M', perCapita:'₦10,259'},
-    {state:'Cross River', amount:'₦54.1B',  amountBn:54.1,  pop:'3.8M', perCapita:'₦14,237'},
-    {state:'Oyo',         amount:'₦61.4B',  amountBn:61.4,  pop:'8M',   perCapita:'₦7,675'},
-    {state:'Kaduna',      amount:'₦58.7B',  amountBn:58.7,  pop:'8.3M', perCapita:'₦7,072'},
-    {state:'Ogun',        amount:'₦52.3B',  amountBn:52.3,  pop:'6M',   perCapita:'₦8,717'},
-    {state:'Edo',         amount:'₦51.6B',  amountBn:51.6,  pop:'4.7M', perCapita:'₦10,979'},
-    {state:'Borno',       amount:'₦50.9B',  amountBn:50.9,  pop:'5.9M', perCapita:'₦8,627'},
-    {state:'Anambra',     amount:'₦47.2B',  amountBn:47.2,  pop:'5.5M', perCapita:'₦8,582'},
-    {state:'Enugu',       amount:'₦44.8B',  amountBn:44.8,  pop:'4.4M', perCapita:'₦10,182'},
-    {state:'FCT/Abuja',   amount:'₦44.1B',  amountBn:44.1,  pop:'3.9M', perCapita:'₦11,308'},
-    {state:'Kogi',        amount:'₦43.6B',  amountBn:43.6,  pop:'4.5M', perCapita:'₦9,689'},
-    {state:'Niger',       amount:'₦43.2B',  amountBn:43.2,  pop:'5.6M', perCapita:'₦7,714'},
-    {state:'Kwara',       amount:'₦42.1B',  amountBn:42.1,  pop:'3.2M', perCapita:'₦13,156'},
-    {state:'Plateau',     amount:'₦41.8B',  amountBn:41.8,  pop:'4.2M', perCapita:'₦9,952'},
-    {state:'Benue',       amount:'₦41.3B',  amountBn:41.3,  pop:'5.7M', perCapita:'₦7,246'},
-    {state:'Abia',        amount:'₦40.9B',  amountBn:40.9,  pop:'3.7M', perCapita:'₦11,054'},
-    {state:'Ondo',        amount:'₦49.7B',  amountBn:49.7,  pop:'4.1M', perCapita:'₦12,122'},
-    {state:'Ekiti',       amount:'₦38.4B',  amountBn:38.4,  pop:'3.3M', perCapita:'₦11,636'},
-    {state:'Osun',        amount:'₦37.9B',  amountBn:37.9,  pop:'4.7M', perCapita:'₦8,064'},
-    {state:'Adamawa',     amount:'₦37.4B',  amountBn:37.4,  pop:'4.2M', perCapita:'₦8,905'},
-    {state:'Bauchi',      amount:'₦37.1B',  amountBn:37.1,  pop:'6.5M', perCapita:'₦5,708'},
-    {state:'Yobe',        amount:'₦36.8B',  amountBn:36.8,  pop:'3.3M', perCapita:'₦11,152'},
-    {state:'Gombe',       amount:'₦36.2B',  amountBn:36.2,  pop:'3.3M', perCapita:'₦10,970'},
-    {state:'Sokoto',      amount:'₦35.9B',  amountBn:35.9,  pop:'5.9M', perCapita:'₦6,085'},
-    {state:'Nasarawa',    amount:'₦35.6B',  amountBn:35.6,  pop:'2.8M', perCapita:'₦12,714'},
-    {state:'Taraba',      amount:'₦35.2B',  amountBn:35.2,  pop:'3.1M', perCapita:'₦11,355'},
-    {state:'Kebbi',       amount:'₦34.8B',  amountBn:34.8,  pop:'4.4M', perCapita:'₦7,909'},
-    {state:'Zamfara',     amount:'₦34.4B',  amountBn:34.4,  pop:'4.5M', perCapita:'₦7,644'},
-    {state:'Katsina',     amount:'₦45.3B',  amountBn:45.3,  pop:'8.8M', perCapita:'₦5,148'},
-    {state:'Jigawa',      amount:'₦41.1B',  amountBn:41.1,  pop:'5.8M', perCapita:'₦7,086'},
-    {state:'Ebonyi',      amount:'₦33.8B',  amountBn:33.8,  pop:'2.9M', perCapita:'₦11,655'},
+    {state:'Lagos',      amount:'\u20a6112.4B',amountBn:112.4,pop:'16M',  perCapita:'\u20a67,025'},
+    {state:'Rivers',     amount:'\u20a698.2B', amountBn:98.2, pop:'7.3M', perCapita:'\u20a613,452'},
+    {state:'Delta',      amount:'\u20a691.6B', amountBn:91.6, pop:'5.7M', perCapita:'\u20a616,070'},
+    {state:'Akwa Ibom',  amount:'\u20a688.3B', amountBn:88.3, pop:'5.5M', perCapita:'\u20a616,055'},
+    {state:'Kano',       amount:'\u20a685.1B', amountBn:85.1, pop:'14M',  perCapita:'\u20a66,079'},
+    {state:'Bayelsa',    amount:'\u20a668.4B', amountBn:68.4, pop:'2.3M', perCapita:'\u20a629,739'},
+    {state:'Oyo',        amount:'\u20a668.6B', amountBn:68.6, pop:'8M',   perCapita:'\u20a68,575'},
+    {state:'Kaduna',     amount:'\u20a665.4B', amountBn:65.4, pop:'8.3M', perCapita:'\u20a67,880'},
+    {state:'Imo',        amount:'\u20a661.8B', amountBn:61.8, pop:'5.4M', perCapita:'\u20a611,444'},
+    {state:'Cross River',amount:'\u20a660.4B', amountBn:60.4, pop:'3.8M', perCapita:'\u20a615,895'},
+    {state:'Ondo',       amount:'\u20a655.6B', amountBn:55.6, pop:'4.1M', perCapita:'\u20a613,561'},
+    {state:'Ogun',       amount:'\u20a658.3B', amountBn:58.3, pop:'6M',   perCapita:'\u20a69,717'},
+    {state:'Edo',        amount:'\u20a657.6B', amountBn:57.6, pop:'4.7M', perCapita:'\u20a612,255'},
+    {state:'Borno',      amount:'\u20a656.8B', amountBn:56.8, pop:'5.9M', perCapita:'\u20a69,627'},
+    {state:'Anambra',    amount:'\u20a652.7B', amountBn:52.7, pop:'5.5M', perCapita:'\u20a69,582'},
+    {state:'Enugu',      amount:'\u20a650.1B', amountBn:50.1, pop:'4.4M', perCapita:'\u20a611,386'},
+    {state:'Katsina',    amount:'\u20a650.8B', amountBn:50.8, pop:'8.8M', perCapita:'\u20a65,773'},
+    {state:'FCT/Abuja',  amount:'\u20a649.3B', amountBn:49.3, pop:'3.9M', perCapita:'\u20a612,641'},
+    {state:'Kogi',       amount:'\u20a648.8B', amountBn:48.8, pop:'4.5M', perCapita:'\u20a610,844'},
+    {state:'Niger',      amount:'\u20a648.3B', amountBn:48.3, pop:'5.6M', perCapita:'\u20a68,625'},
+    {state:'Jigawa',     amount:'\u20a646.0B', amountBn:46.0, pop:'5.8M', perCapita:'\u20a67,931'},
+    {state:'Kwara',      amount:'\u20a647.1B', amountBn:47.1, pop:'3.2M', perCapita:'\u20a614,719'},
+    {state:'Plateau',    amount:'\u20a646.7B', amountBn:46.7, pop:'4.2M', perCapita:'\u20a611,119'},
+    {state:'Benue',      amount:'\u20a646.2B', amountBn:46.2, pop:'5.7M', perCapita:'\u20a68,105'},
+    {state:'Abia',       amount:'\u20a645.8B', amountBn:45.8, pop:'3.7M', perCapita:'\u20a612,378'},
+    {state:'Ekiti',      amount:'\u20a643.1B', amountBn:43.1, pop:'3.3M', perCapita:'\u20a613,061'},
+    {state:'Osun',       amount:'\u20a642.5B', amountBn:42.5, pop:'4.7M', perCapita:'\u20a69,043'},
+    {state:'Adamawa',    amount:'\u20a641.9B', amountBn:41.9, pop:'4.2M', perCapita:'\u20a69,976'},
+    {state:'Bauchi',     amount:'\u20a641.6B', amountBn:41.6, pop:'6.5M', perCapita:'\u20a66,400'},
+    {state:'Yobe',       amount:'\u20a641.2B', amountBn:41.2, pop:'3.3M', perCapita:'\u20a612,485'},
+    {state:'Gombe',      amount:'\u20a640.6B', amountBn:40.6, pop:'3.3M', perCapita:'\u20a612,303'},
+    {state:'Sokoto',     amount:'\u20a640.3B', amountBn:40.3, pop:'5.9M', perCapita:'\u20a66,831'},
+    {state:'Nasarawa',   amount:'\u20a639.9B', amountBn:39.9, pop:'2.8M', perCapita:'\u20a614,250'},
+    {state:'Taraba',     amount:'\u20a639.5B', amountBn:39.5, pop:'3.1M', perCapita:'\u20a612,742'},
+    {state:'Kebbi',      amount:'\u20a639.0B', amountBn:39.0, pop:'4.4M', perCapita:'\u20a68,864'},
+    {state:'Zamfara',    amount:'\u20a638.6B', amountBn:38.6, pop:'4.5M', perCapita:'\u20a68,578'},
+    {state:'Ebonyi',     amount:'\u20a637.9B', amountBn:37.9, pop:'2.9M', perCapita:'\u20a613,069'},
   ].sort((a,b)=>b.amountBn-a.amountBn)
 }
-
-// Keep 2024 as alias for any old references
-export const BUDGET_2024 = BUDGET_2025
+export const BUDGET_2025 = BUDGET_2026
+export const BUDGET_2024 = BUDGET_2026
 
 // ─── Live FAAC fetch (BudgIT Open Data) ──────────────────
 let _faacCache=null, _faacFetched=0
