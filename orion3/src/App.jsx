@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { NigeriaPulse, GovernmentWatch, PredictionEngine, NigeriaEconomy, Agriculture, CivicIQ } from './screens/Nigeria'
 import Map4D from './screens/Map4D'
+import Account from './screens/Account'
+import ElectionWatch from './screens/ElectionWatch'
+import CommunityHub from './screens/CommunityHub'
+import BudgetParliament from './screens/BudgetParliament'
+import NGBriefing from './screens/NGBriefing'
 import { supabase, hasSupabase } from './lib/supabase'
 import { generateBrief, generateLocalForecast, hasGroq } from './lib/groq'
 import { subscribeToPush, unsubscribeFromPush, notify, getPushStatus, registerSW } from './lib/push'
@@ -159,13 +164,14 @@ function Btn({children,variant='default',sz='md',icon,onClick,full,disabled=fals
   )
 }
 
-function IBtn({icon,size=38,color=BGLOW,active=false,badge=false,onClick}) {
+function IBtn({icon,size=38,color=BGLOW,active=false,badge=false,count=0,onClick}) {
   const [p,setP] = useState(false)
   return (
     <button onMouseDown={()=>setP(true)} onMouseUp={()=>setP(false)} onMouseLeave={()=>setP(false)} onClick={onClick}
       style={{width:size,height:size,borderRadius:'50%',border:'none',background:`radial-gradient(circle at 35% 35%,${BGL},${BG})`,boxShadow:(p||active)?(`${N.inset}${active?`,0 0 14px ${color}44`:''}`):`${N.raised}`,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.14s',transform:p?'scale(0.95)':'scale(1)',outline:'none',position:'relative',flexShrink:0}}>
-      <I n={icon} s={size*0.4} c={active?color:MUTED} style={{filter:active?`drop-shadow(0 0 5px ${color})`:''}}/>
-      {badge && <span style={{position:'absolute',top:5,right:5,width:7,height:7,borderRadius:'50%',background:DANGER,boxShadow:`0 0 8px ${DANGER}`,border:`1px solid ${BG}`}}/>}
+      <I n={icon} s={size*0.4} c={active?color:badge?DANGER:MUTED} style={{filter:active||badge?`drop-shadow(0 0 5px ${active?color:DANGER})`:''}}/>
+      {badge && count>0 && <span style={{position:'absolute',top:2,right:2,minWidth:16,height:16,borderRadius:8,background:DANGER,boxShadow:`0 0 8px ${DANGER}`,border:`1px solid ${BG}`,fontSize:9,fontWeight:800,color:WHITE,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px'}}>{count>9?'9+':count}</span>}
+      {badge && count===0 && <span style={{position:'absolute',top:6,right:6,width:6,height:6,borderRadius:'50%',background:DANGER,boxShadow:`0 0 6px ${DANGER}`,border:`1px solid ${BG}`}}/>}
     </button>
   )
 }
@@ -1419,20 +1425,31 @@ const NAV = [
   {id:'map',      icon:'globe',     label:'4D Map'},
 ]
 const NAV_NG = [
-  {id:'ng_pulse',  icon:'bolt',     label:'NG Pulse'},
-  {id:'ng_govt',   icon:'shield',   label:'Govt'},
-  {id:'ng_predict',icon:'brain',    label:'Predict'},
-  {id:'ng_economy',icon:'trending', label:'Economy'},
-  {id:'ng_agric',  icon:'fire',     label:'Agric'},
-  {id:'ng_civic',  icon:'star',     label:'Civic IQ'},
-  {id:'ng_map',    icon:'target',   label:'4D Map'},
+  {id:'ng_pulse',    icon:'bolt',      label:'Pulse'},
+  {id:'ng_hub',      icon:'users',     label:'Community'},
+  {id:'ng_election', icon:'check',     label:'Election'},
+  {id:'ng_economy',  icon:'trending',  label:'Economy'},
+  {id:'ng_briefing', icon:'newspaper', label:'Briefing'},
+  {id:'ng_map',      icon:'target',    label:'4D Map'},
+  {id:'ng_more',     icon:'grid',      label:'More'},
 ]
-const FREE = new Set(['pulse','tension','brief','ng_pulse','ng_civic','ng_map'])
+const NG_MORE_SCREENS = [
+  {id:'ng_govt',     icon:'shield',    label:'Govt Watch',    emoji:'🏛️'},
+  {id:'ng_predict',  icon:'brain',     label:'Predictions',   emoji:'🔮'},
+  {id:'ng_budget',   icon:'star',      label:'Budget & NASS', emoji:'💰'},
+  {id:'ng_agric',    icon:'fire',      label:'Agriculture',   emoji:'🌾'},
+  {id:'ng_civic',    icon:'star',      label:'Civic IQ',      emoji:'📚'},
+  {id:'ng_account',  icon:'user',      label:'My Account',    emoji:'👤'},
+]
+const FREE = new Set(['pulse','tension','brief','ng_pulse','ng_briefing','ng_civic','ng_map','ng_election','ng_hub'])
 const SCREEN_NAMES = {
   pulse:'World Pulse',tension:'Tension Meter',watchlist:'Watchlist',geoedge:'GeoEdge',
   area:'My Area',brief:'Daily Brief',travel:'Travel Safety',
-  ng_pulse:'Nigeria Pulse',ng_govt:'Government Watch',ng_predict:'Prediction Engine',
-  ng_economy:'Nigeria Economy',ng_agric:'Agriculture',ng_civic:'Civic IQ',ng_map:'4D Intelligence Map',map:'4D Intelligence Map',
+  ng_pulse:'Nigeria Pulse',ng_briefing:'Nigeria Briefing',ng_hub:'Community Hub',
+  ng_election:'Election Watch 2027',ng_budget:'Budget & Parliament',ng_economy:'Nigeria Economy',
+  ng_govt:'Government Watch',ng_predict:'Prediction Engine',ng_agric:'Agriculture',
+  ng_civic:'Civic IQ',ng_map:'4D Intelligence Map',map:'4D Intelligence Map',
+  ng_account:'My Account',ng_more:'More Screens',
 }
 
 export default function App() {
@@ -1444,6 +1461,22 @@ export default function App() {
   const [showAuth,setShowAuth] = useState(false)
   const [authMode,setAuthMode] = useState('signup')
   const [mounted,setMounted] = useState(false)
+  const [unreadNotifs,setUnreadNotifs] = useState(0)
+  const [showMore,setShowMore] = useState(false)
+
+  const loadUnread = useCallback(async(u) => {
+    if(!supabase||!u||u.id==='guest') return
+    try {
+      const {count} = await supabase.from('notifications').select('*',{count:'exact',head:true}).eq('user_id',u.id).eq('is_read',false)
+      setUnreadNotifs(count||0)
+    } catch{}
+  },[])
+
+  const [acctTab, setAcctTab] = useState('profile')
+
+  const handleBell = useCallback(() => {
+    setNaija(true); setScreen('ng_account'); setAcctTab('notifications')
+  },[])
 
   useEffect(()=>{
     setTimeout(()=>setMounted(true),100)
@@ -1459,7 +1492,7 @@ export default function App() {
           const {data:prof} = await supabase.from('profiles').select('*').eq('id',session.user.id).single()
           const u = {id:session.user.id,email:session.user.email,name:prof?.name||session.user.email.split('@')[0],watchlist:prof?.watchlist||[],pushEnabled:prof?.push_enabled||false,homeCountry:prof?.home_country||''}
           localStorage.setItem('orion_user',JSON.stringify(u))
-          setUser(u); return
+          setUser(u); loadUnread(u); return
         }
       }
       const stored = localStorage.getItem('orion_user')
@@ -1497,10 +1530,16 @@ export default function App() {
   },[user])
 
   const handleNav = (id) => {
+    if (id === 'ng_more') { setShowMore(true); return }
+    if (id === 'ng_account') {
+      if (!user || user.id==='guest') { setAuthMode('signup'); setShowAuth(true); return }
+      setScreen('ng_account'); return
+    }
     if (!FREE.has(id) && (!user || user.id==='guest')) {
       setAuthMode('signup'); setShowAuth(true); return
     }
     setScreen(id)
+    setShowMore(false)
   }
 
   const handleOnboardingComplete = (u) => { setUser(u); setShowOnboarding(false); setShowAuth(false) }
@@ -1515,23 +1554,30 @@ export default function App() {
 
   const isGuest = !user || user.id==='guest'
 
+  const GW = (f) => isGuest ? <GateWall feature={f} onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : null
+
   const screens = {
     pulse:     <WorldPulse/>,
     tension:   <TensionMeter/>,
-    watchlist: isGuest ? <GateWall feature="Watchlist" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <Watchlist user={user} onUpdateUser={updateUser}/>,
-    geoedge:   isGuest ? <GateWall feature="GeoEdge" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <GeoEdge/>,
-    area:      isGuest ? <GateWall feature="My Area" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <MyArea/>,
+    watchlist: GW('Watchlist') ?? <Watchlist user={user} onUpdateUser={updateUser}/>,
+    geoedge:   GW('GeoEdge') ?? <GeoEdge/>,
+    area:      GW('My Area') ?? <MyArea/>,
     brief:     <DailyBrief/>,
-    travel:    isGuest ? <GateWall feature="Travel Safety" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <TravelSafety user={user}/>,
+    travel:    GW('Travel Safety') ?? <TravelSafety user={user}/>,
     // Nigeria screens
-    ng_pulse:   <NigeriaPulse pidgin={pidgin}/>,
-    ng_govt:    isGuest ? <GateWall feature="Government Watch" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <GovernmentWatch pidgin={pidgin}/>,
-    ng_predict: isGuest ? <GateWall feature="Prediction Engine" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <PredictionEngine pidgin={pidgin}/>,
-    ng_economy: isGuest ? <GateWall feature="Nigeria Economy" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <NigeriaEconomy pidgin={pidgin} user={user}/>,
-    ng_agric:   isGuest ? <GateWall feature="Agriculture" onSignup={()=>{setAuthMode('signup');setShowAuth(true)}} onLogin={()=>{setAuthMode('login');setShowAuth(true)}}/> : <Agriculture pidgin={pidgin}/>,
-    ng_civic:   <CivicIQ pidgin={pidgin}/>,
-    ng_map:     <Map4D user={user}/>,
-    map:        <Map4D user={user}/>,
+    ng_pulse:    <NigeriaPulse pidgin={pidgin}/>,
+    ng_briefing: <NGBriefing/>,
+    ng_hub:      <CommunityHub user={user} supabase={supabase}/>,
+    ng_election: <ElectionWatch user={user} supabase={supabase}/>,
+    ng_budget:   GW('Budget & Parliament') ?? <BudgetParliament/>,
+    ng_govt:     GW('Government Watch') ?? <GovernmentWatch pidgin={pidgin}/>,
+    ng_predict:  GW('Prediction Engine') ?? <PredictionEngine pidgin={pidgin}/>,
+    ng_economy:  GW('Nigeria Economy') ?? <NigeriaEconomy pidgin={pidgin} user={user}/>,
+    ng_agric:    GW('Agriculture') ?? <Agriculture pidgin={pidgin}/>,
+    ng_civic:    <CivicIQ pidgin={pidgin}/>,
+    ng_map:      <Map4D user={user}/>,
+    ng_account:  <Account user={user} supabase={supabase} onUpdateUser={updateUser} onSignOut={handleSignOut} initialTab={acctTab} onTabChange={()=>setAcctTab('profile')}/>,
+    map:         <Map4D user={user}/>,
   }
 
   const isMap = screen === 'map' || screen === 'ng_map'
@@ -1723,12 +1769,12 @@ export default function App() {
                 )}
                 {isGuest
                   ? <Btn sz="sm" variant="primary" onClick={()=>{setAuthMode('signup');setShowAuth(true)}}>Sign Up</Btn>
-                  : <button onClick={handleSignOut} style={{background:'none',border:'none',cursor:'pointer',outline:'none',display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:10,boxShadow:N.raisedSm}}>
-                      <I n="user" s={14} c={MUTED}/>
+                  : <button onClick={()=>{setNaija(true);setScreen('ng_account')}} style={{background:'none',border:'none',cursor:'pointer',outline:'none',display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:10,boxShadow:N.raisedSm}}>
+                      <span style={{fontSize:18}}>{user.avatar_emoji||'👤'}</span>
                       <span style={{fontSize:11,color:MUTED,fontWeight:500,maxWidth:70,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</span>
                     </button>
                 }
-                <IBtn icon="bell" size={36} badge/>
+                <IBtn icon="bell" size={36} badge={unreadNotifs>0} count={unreadNotifs} onClick={handleBell}/>
               </div>
             </div>
 
@@ -1776,6 +1822,28 @@ export default function App() {
                   )
                 })}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Nigeria "More" Modal ── */}
+      {showMore&&(
+        <div onClick={()=>setShowMore(false)} style={{position:'fixed',inset:0,zIndex:500,background:'rgba(7,10,14,0.88)',display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:520,background:`linear-gradient(180deg,${BGL},${BG})`,borderRadius:'24px 24px 0 0',padding:'20px 20px 36px',boxShadow:`0 -4px 40px rgba(0,0,0,0.6),0 -1px 0 ${SL}`}}>
+            <div style={{width:40,height:4,borderRadius:2,background:MUTED+'44',margin:'0 auto 20px'}}/>
+            <div style={{fontSize:15,fontWeight:800,color:WHITE,marginBottom:4}}>More Nigeria Screens</div>
+            <div style={{fontSize:11,color:MUTED,marginBottom:18}}>All features available for Nigeria</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              {NG_MORE_SCREENS.map(item=>(
+                <button key={item.id} onClick={()=>handleNav(item.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'14px 16px',borderRadius:14,border:'none',background:`linear-gradient(145deg,${BGL},${BG})`,cursor:'pointer',boxShadow:N.raised,textAlign:'left'}}>
+                  <span style={{fontSize:24}}>{item.emoji}</span>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700,color:WHITE}}>{item.label}</div>
+                    <div style={{fontSize:10,color:MUTED,marginTop:1}}>{item.id==='ng_account'?'Profile & settings':item.id==='ng_govt'?'Live from State House':item.id==='ng_predict'?'AI forecasts':item.id==='ng_budget'?'Budget & NASS':item.id==='ng_agric'?'Prices & weather':item.id==='ng_civic'?'Know your rights':''}</div>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
